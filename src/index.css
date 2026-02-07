@@ -2,95 +2,96 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* LEMA PESQUISAS - Design System */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-
+    /* Brand Colors - Lema Pesquisas */
+    --lema-primary: 327 66% 34%;        /* #90205D */
+    --lema-primary-light: 327 66% 44%;
+    --lema-primary-dark: 327 66% 24%;
+    --lema-secondary: 37 100% 50%;      /* #FF9F00 */
+    --lema-secondary-light: 37 100% 60%;
+    --lema-secondary-dark: 37 100% 40%;
+    
+    /* Semantic Colors */
+    --background: 210 20% 98%;          /* #F8F9FA */
+    --foreground: 220 20% 10%;
+    
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
+    --card-foreground: 220 20% 10%;
+    
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-
-    --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --popover-foreground: 220 20% 10%;
+    
+    --primary: 327 66% 34%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 37 100% 50%;
+    --secondary-foreground: 220 20% 10%;
+    
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 10% 40%;
+    
+    --accent: 327 66% 95%;
+    --accent-foreground: 327 66% 34%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 37 100% 50%;
+    --warning-foreground: 220 20% 10%;
+    
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 327 66% 34%;
+    
+    --radius: 0.75rem;
+    
+    /* Status Colors */
+    --online: 142 76% 36%;
+    --offline: 0 84% 60%;
+    
+    /* Sidebar */
+    --sidebar-background: 327 66% 34%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 327 66% 34%;
+    --sidebar-accent: 327 66% 44%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 327 66% 44%;
+    --sidebar-ring: 37 100% 50%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --background: 220 20% 10%;
+    --foreground: 210 20% 98%;
+    
+    --card: 220 20% 14%;
+    --card-foreground: 210 20% 98%;
+    
+    --popover: 220 20% 14%;
+    --popover-foreground: 210 20% 98%;
+    
+    --primary: 327 66% 44%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 37 100% 50%;
+    --secondary-foreground: 220 20% 10%;
+    
+    --muted: 220 20% 20%;
+    --muted-foreground: 220 10% 60%;
+    
+    --accent: 327 66% 20%;
+    --accent-foreground: 327 66% 70%;
+    
+    --border: 220 20% 20%;
+    --input: 220 20% 20%;
+    --ring: 327 66% 44%;
   }
 }
 
@@ -98,8 +99,145 @@ All colors MUST be HSL.
   * {
     @apply border-border;
   }
-
+  
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
   }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  /* Brand Gradient */
+  .bg-lema-gradient {
+    background: linear-gradient(135deg, hsl(var(--lema-primary)) 0%, hsl(var(--lema-primary-dark)) 100%);
+  }
+  
+  .bg-lema-gradient-accent {
+    background: linear-gradient(135deg, hsl(var(--lema-secondary)) 0%, hsl(var(--lema-secondary-dark)) 100%);
+  }
+  
+  /* Status Indicator */
+  .status-online {
+    @apply bg-green-500;
+    animation: pulse-green 2s infinite;
+  }
+  
+  .status-offline {
+    @apply bg-red-500;
+    animation: pulse-red 2s infinite;
+  }
+  
+  /* Card Styles */
+  .card-elevated {
+    @apply bg-card rounded-xl shadow-lg border border-border/50;
+  }
+  
+  .card-metric {
+    @apply bg-card rounded-xl p-6 shadow-md border border-border/30 transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+  
+  /* Button Variants */
+  .btn-sync {
+    @apply bg-lema-gradient-accent text-foreground font-bold py-4 px-8 rounded-xl shadow-lg transition-all duration-300;
+    @apply hover:shadow-xl hover:scale-105 active:scale-95;
+  }
+  
+  .btn-primary-lema {
+    @apply bg-lema-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-300;
+    @apply hover:shadow-lg hover:opacity-90 active:scale-95;
+  }
+  
+  /* Input Focus */
+  .input-lema {
+    @apply border-2 border-border rounded-lg px-4 py-3 transition-all duration-200;
+    @apply focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none;
+  }
+  
+  /* Recording Indicator */
+  .recording-pulse {
+    animation: recording-pulse 1.5s ease-in-out infinite;
+  }
+}
+
+@layer utilities {
+  .text-lema-primary {
+    color: hsl(var(--lema-primary));
+  }
+  
+  .text-lema-secondary {
+    color: hsl(var(--lema-secondary));
+  }
+  
+  .bg-lema-primary {
+    background-color: hsl(var(--lema-primary));
+  }
+  
+  .bg-lema-secondary {
+    background-color: hsl(var(--lema-secondary));
+  }
+  
+  .border-lema-primary {
+    border-color: hsl(var(--lema-primary));
+  }
+  
+  .border-lema-secondary {
+    border-color: hsl(var(--lema-secondary));
+  }
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes recording-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--lema-primary) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--lema-primary) / 0.5);
 }
