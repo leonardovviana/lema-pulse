@@ -14,16 +14,218 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      metas_diarias: {
+        Row: {
+          concluidas: number
+          created_at: string
+          data: string
+          entrevistador_id: string
+          id: string
+          meta: number
+        }
+        Insert: {
+          concluidas?: number
+          created_at?: string
+          data?: string
+          entrevistador_id: string
+          id?: string
+          meta?: number
+        }
+        Update: {
+          concluidas?: number
+          created_at?: string
+          data?: string
+          entrevistador_id?: string
+          id?: string
+          meta?: number
+        }
+        Relationships: []
+      }
+      perguntas: {
+        Row: {
+          created_at: string
+          id: string
+          obrigatoria: boolean
+          opcoes: string[] | null
+          ordem: number
+          pesquisa_id: string
+          texto: string
+          tipo: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          obrigatoria?: boolean
+          opcoes?: string[] | null
+          ordem?: number
+          pesquisa_id: string
+          texto: string
+          tipo: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          obrigatoria?: boolean
+          opcoes?: string[] | null
+          ordem?: number
+          pesquisa_id?: string
+          texto?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perguntas_pesquisa_id_fkey"
+            columns: ["pesquisa_id"]
+            isOneToOne: false
+            referencedRelation: "pesquisas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pesquisas: {
+        Row: {
+          ativa: boolean
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          id: string
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          ativa?: boolean
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          ativa?: boolean
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          id: string
+          nome: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          id?: string
+          nome: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      respostas: {
+        Row: {
+          audio_url: string | null
+          client_id: string | null
+          created_at: string
+          entrevistador_id: string
+          id: string
+          latitude: number | null
+          longitude: number | null
+          pesquisa_id: string
+          respostas: Json
+          synced: boolean
+        }
+        Insert: {
+          audio_url?: string | null
+          client_id?: string | null
+          created_at?: string
+          entrevistador_id: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          pesquisa_id: string
+          respostas?: Json
+          synced?: boolean
+        }
+        Update: {
+          audio_url?: string | null
+          client_id?: string | null
+          created_at?: string
+          entrevistador_id?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          pesquisa_id?: string
+          respostas?: Json
+          synced?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "respostas_pesquisa_id_fkey"
+            columns: ["pesquisa_id"]
+            isOneToOne: false
+            referencedRelation: "pesquisas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "entrevistador"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +352,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "entrevistador"],
+    },
   },
 } as const

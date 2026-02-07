@@ -1,37 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { StatusIndicator } from '@/components/StatusIndicator';
 import { SyncButton } from '@/components/SyncButton';
 import { SurveyForm } from '@/components/SurveyForm';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSync } from '@/hooks/useSync';
-import { mockSurveys } from '@/data/mockData';
+import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
+import { useSyncToSupabase } from '@/hooks/useSyncToSupabase';
+import { useSurveys } from '@/hooks/useSurveys';
 import { Survey } from '@/types/survey';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   ClipboardList, 
   LogOut, 
   Clock, 
   ChevronRight,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function InterviewerDashboard() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  const { syncStatus, syncNow, getPendingResponses } = useSync();
+  const { profile, signOut } = useSupabaseAuthContext();
+  const { syncStatus, syncNow, getPendingResponses } = useSyncToSupabase();
+  const { data: surveys, isLoading: surveysLoading, refetch } = useSurveys();
   const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     navigate('/');
   };
 
   const handleSurveyComplete = () => {
     setSelectedSurvey(null);
+    refetch(); // Refresh surveys list
   };
 
   // If a survey is selected, show the form
@@ -44,7 +48,7 @@ export default function InterviewerDashboard() {
     );
   }
 
-  const activeSurveys = mockSurveys.filter(s => s.ativa);
+  const activeSurveys = surveys?.filter(s => s.ativa) || [];
   const pendingResponses = getPendingResponses();
 
   return (
@@ -71,10 +75,10 @@ export default function InterviewerDashboard() {
       <div className="bg-card border-b p-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-lema-gradient flex items-center justify-center text-white font-bold text-lg">
-            {user?.nome.charAt(0)}
+            {profile?.nome?.charAt(0) || '?'}
           </div>
           <div>
-            <p className="font-semibold">{user?.nome}</p>
+            <p className="font-semibold">{profile?.nome || 'Usuário'}</p>
             <p className="text-sm text-muted-foreground">Entrevistador</p>
           </div>
         </div>
@@ -134,37 +138,54 @@ export default function InterviewerDashboard() {
 
         {/* Active Surveys */}
         <div>
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-lema-primary" />
-            Pesquisas Ativas
-          </h2>
-
-          <div className="space-y-3">
-            {activeSurveys.map((survey) => (
-              <button
-                key={survey.id}
-                onClick={() => setSelectedSurvey(survey)}
-                className="w-full card-elevated p-4 text-left hover:shadow-lema transition-all duration-200 active:scale-[0.98]"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-foreground">
-                      {survey.titulo}
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {survey.descricao}
-                    </p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full">
-                        {survey.perguntas.length} perguntas
-                      </span>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                </div>
-              </button>
-            ))}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-lema-primary" />
+              Pesquisas Ativas
+            </h2>
+            <Button variant="ghost" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="w-4 h-4" />
+            </Button>
           </div>
+
+          {surveysLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-24 w-full rounded-xl" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+            </div>
+          ) : activeSurveys.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <ClipboardList className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>Nenhuma pesquisa ativa no momento</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activeSurveys.map((survey) => (
+                <button
+                  key={survey.id}
+                  onClick={() => setSelectedSurvey(survey)}
+                  className="w-full card-elevated p-4 text-left hover:shadow-lema transition-all duration-200 active:scale-[0.98]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-foreground">
+                        {survey.titulo}
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {survey.descricao}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full">
+                          {survey.perguntas.length} perguntas
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pending Responses */}

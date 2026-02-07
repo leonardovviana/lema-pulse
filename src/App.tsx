@@ -3,13 +3,24 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { SupabaseAuthProvider, useSupabaseAuthContext } from "@/contexts/SupabaseAuthContext";
+import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
+import AuthPage from "./pages/AuthPage";
 import InterviewerDashboard from "./pages/InterviewerDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+// Loading component
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+}
 
 // Protected Route Component
 function ProtectedRoute({ 
@@ -19,14 +30,43 @@ function ProtectedRoute({
   children: React.ReactNode; 
   allowedRole: 'entrevistador' | 'admin';
 }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, role, isLoading } = useSupabaseAuthContext();
 
-  if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+  if (isLoading) {
+    return <LoadingScreen />;
   }
 
-  if (user?.role !== allowedRole) {
-    return <Navigate to="/" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (role !== allowedRole) {
+    // Redirect to appropriate dashboard based on role
+    if (role === 'admin') {
+      return <Navigate to="/admin" replace />;
+    }
+    if (role === 'entrevistador') {
+      return <Navigate to="/entrevistador" replace />;
+    }
+    return <Navigate to="/auth" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+// Auth Route - redirects if already logged in
+function AuthRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, role, isLoading } = useSupabaseAuthContext();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (isAuthenticated) {
+    if (role === 'admin') {
+      return <Navigate to="/admin" replace />;
+    }
+    return <Navigate to="/entrevistador" replace />;
   }
 
   return <>{children}</>;
@@ -36,6 +76,14 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Index />} />
+      <Route 
+        path="/auth" 
+        element={
+          <AuthRoute>
+            <AuthPage />
+          </AuthRoute>
+        } 
+      />
       <Route 
         path="/entrevistador" 
         element={
@@ -60,7 +108,7 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
+    <SupabaseAuthProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -68,7 +116,7 @@ const App = () => (
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
-    </AuthProvider>
+    </SupabaseAuthProvider>
   </QueryClientProvider>
 );
 
