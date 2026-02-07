@@ -5,11 +5,11 @@ import { MetricCard } from '@/components/MetricCard';
 import { PieChartCard, BarChartCard } from '@/components/Charts';
 import { AIAnalyst } from '@/components/AIAnalyst';
 import { DataGrid } from '@/components/DataGrid';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSync } from '@/hooks/useSync';
-import { mockSurveys, mockResponses, mockDailyStats, getResponseDistribution } from '@/data/mockData';
+import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
+import { useResponses, useAdminStats } from '@/hooks/useResponses';
+import { mockDailyStats, getResponseDistribution } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   LayoutDashboard, 
   ClipboardList, 
@@ -19,41 +19,35 @@ import {
   Users,
   Target,
   TrendingUp,
-  Calendar
+  Calendar,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  const { getAllResponses } = useSync();
+  const { profile, signOut } = useSupabaseAuthContext();
+  const { data: responses, isLoading: responsesLoading, refetch } = useResponses();
+  const { data: stats, isLoading: statsLoading } = useAdminStats();
   const [activeTab, setActiveTab] = useState('dashboard');
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     navigate('/');
   };
 
-  // Combine mock data with local responses
-  const allResponses = useMemo(() => {
-    const localResponses = getAllResponses();
-    return [...mockResponses, ...localResponses];
-  }, [getAllResponses]);
+  const allResponses = responses || [];
 
-  // Calculate metrics
-  const totalSurveys = allResponses.length;
-  const uniqueInterviewers = [...new Set(allResponses.map(r => r.entrevistadorId))].length;
-  const todayCount = allResponses.filter(
-    r => new Date(r.timestamp).toDateString() === new Date().toDateString()
-  ).length;
+  // Calculate metrics from stats or responses
+  const totalSurveys = stats?.totalResponses || allResponses.length;
+  const uniqueInterviewers = stats?.activeInterviewers || 0;
+  const todayCount = stats?.todayResponses || 0;
   const dailyTarget = 20;
 
-  // Get distribution data for the first survey's first question
+  // Get distribution data for pie chart (from responses)
   const distributionData = useMemo(() => {
-    if (mockSurveys[0]?.perguntas[0]) {
-      return getResponseDistribution(mockSurveys[0].id, mockSurveys[0].perguntas[0].id);
-    }
-    return [];
+    // Use mock data for now, can be replaced with real data
+    return getResponseDistribution('survey-1', 'q1');
   }, []);
 
   const navItems = [
@@ -94,10 +88,10 @@ export default function AdminDashboard() {
         <div className="p-4 border-t border-white/10">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold">
-              {user?.nome.charAt(0)}
+              {profile?.nome?.charAt(0) || '?'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">{user?.nome}</p>
+              <p className="font-medium truncate">{profile?.nome || 'Admin'}</p>
               <p className="text-xs text-white/60">Administrador</p>
             </div>
           </div>
@@ -153,41 +147,55 @@ export default function AdminDashboard() {
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-fade-in">
             {/* Page Title */}
-            <div>
-              <h1 className="text-2xl font-bold">Dashboard</h1>
-              <p className="text-muted-foreground">Visão geral das pesquisas</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">Dashboard</h1>
+                <p className="text-muted-foreground">Visão geral das pesquisas</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Atualizar
+              </Button>
             </div>
 
             {/* Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                title="Total de Pesquisas"
-                value={totalSurveys}
-                subtitle="Todas as respostas coletadas"
-                icon={ClipboardList}
-                trend={{ value: 12, isPositive: true }}
-                variant="primary"
-              />
-              <MetricCard
-                title="Entrevistadores Ativos"
-                value={uniqueInterviewers}
-                subtitle="Usuários com coletas"
-                icon={Users}
-              />
-              <MetricCard
-                title="Meta do Dia"
-                value={`${todayCount}/${dailyTarget}`}
-                subtitle={`${Math.round((todayCount / dailyTarget) * 100)}% concluído`}
-                icon={Target}
-                variant="secondary"
-              />
-              <MetricCard
-                title="Média Diária"
-                value={(totalSurveys / 7).toFixed(1)}
-                subtitle="Últimos 7 dias"
-                icon={TrendingUp}
-              />
-            </div>
+            {statsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map(i => (
+                  <Skeleton key={i} className="h-32 rounded-xl" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard
+                  title="Total de Pesquisas"
+                  value={totalSurveys}
+                  subtitle="Todas as respostas coletadas"
+                  icon={ClipboardList}
+                  trend={{ value: 12, isPositive: true }}
+                  variant="primary"
+                />
+                <MetricCard
+                  title="Entrevistadores Ativos"
+                  value={uniqueInterviewers}
+                  subtitle="Usuários com coletas hoje"
+                  icon={Users}
+                />
+                <MetricCard
+                  title="Meta do Dia"
+                  value={`${todayCount}/${dailyTarget}`}
+                  subtitle={`${Math.round((todayCount / dailyTarget) * 100)}% concluído`}
+                  icon={Target}
+                  variant="secondary"
+                />
+                <MetricCard
+                  title="Pesquisas Ativas"
+                  value={stats?.activeSurveys || 0}
+                  subtitle="Disponíveis para coleta"
+                  icon={TrendingUp}
+                />
+              </div>
+            )}
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -207,37 +215,49 @@ export default function AdminDashboard() {
                 <Calendar className="w-5 h-5 text-lema-primary" />
                 Atividade Recente
               </h3>
-              <div className="space-y-3">
-                {allResponses.slice(0, 5).map((response) => (
-                  <div
-                    key={response.id}
-                    className="flex items-center justify-between py-3 border-b last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center">
-                        {response.entrevistadorNome.charAt(0)}
+              {responsesLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
+                </div>
+              ) : allResponses.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  Nenhuma resposta coletada ainda
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {allResponses.slice(0, 5).map((response) => (
+                    <div
+                      key={response.id}
+                      className="flex items-center justify-between py-3 border-b last:border-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center">
+                          {response.entrevistadorNome?.charAt(0) || '?'}
+                        </div>
+                        <div>
+                          <p className="font-medium">{response.surveyTitulo}</p>
+                          <p className="text-sm text-muted-foreground">
+                            por {response.entrevistadorNome || 'Desconhecido'}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium">{response.surveyTitulo}</p>
-                        <p className="text-sm text-muted-foreground">
-                          por {response.entrevistadorNome}
+                      <div className="text-right">
+                        <p className="text-sm">
+                          {new Date(response.timestamp).toLocaleDateString('pt-BR')}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(response.timestamp).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm">
-                        {new Date(response.timestamp).toLocaleDateString('pt-BR')}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(response.timestamp).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -254,11 +274,21 @@ export default function AdminDashboard() {
 
         {activeTab === 'data' && (
           <div className="space-y-6 animate-fade-in">
-            <div>
-              <h1 className="text-2xl font-bold">Dados das Pesquisas</h1>
-              <p className="text-muted-foreground">Visualize e exporte todas as respostas</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">Dados das Pesquisas</h1>
+                <p className="text-muted-foreground">Visualize e exporte todas as respostas</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Atualizar
+              </Button>
             </div>
-            <DataGrid responses={allResponses} />
+            {responsesLoading ? (
+              <Skeleton className="h-96 w-full rounded-xl" />
+            ) : (
+              <DataGrid responses={allResponses} />
+            )}
           </div>
         )}
       </main>

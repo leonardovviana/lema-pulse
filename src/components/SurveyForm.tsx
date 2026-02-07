@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, MapPin, Mic, Check, AlertCircle } from 'lucide-react';
 import { Survey, Question, SurveyResponse } from '@/types/survey';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useGeolocation } from '@/hooks/useGeolocation';
-import { useSync } from '@/hooks/useSync';
+import { useSyncToSupabase } from '@/hooks/useSyncToSupabase';
 import { RecordingIndicator } from '@/components/RecordingIndicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,8 +25,8 @@ interface SurveyFormProps {
 
 export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const { addResponse } = useSync();
+  const { user, profile } = useSupabaseAuthContext();
+  const { addResponse } = useSyncToSupabase();
   const { startRecording, stopRecording, isRecording, duration, getBase64Audio } = useAudioRecorder();
   const { getCurrentPosition, latitude, longitude } = useGeolocation();
   
@@ -112,7 +112,7 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
         surveyId: survey.id,
         surveyTitulo: survey.titulo,
         entrevistadorId: user?.id || 'unknown',
-        entrevistadorNome: user?.nome || 'Desconhecido',
+        entrevistadorNome: profile?.nome || 'Desconhecido',
         respostas: answers,
         audioBlob: audioBase64 || undefined,
         gps: gps,
