@@ -4,12 +4,11 @@ import { Logo } from '@/components/Logo';
 import { StatusIndicator } from '@/components/StatusIndicator';
 import { SyncButton } from '@/components/SyncButton';
 import { SurveyForm } from '@/components/SurveyForm';
+import { SurveyCodeInput } from '@/components/SurveyCodeInput';
 import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
 import { useSyncToSupabase } from '@/hooks/useSyncToSupabase';
-import { useSurveys } from '@/hooks/useSurveys';
-import { Survey } from '@/types/survey';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { 
   ClipboardList, 
   LogOut, 
@@ -17,16 +16,84 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertTriangle,
-  RefreshCw
+  Key,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+interface UnlockedSurvey {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  perguntas: any[];
+}
+
+const UNLOCKED_SURVEYS_KEY = 'lema_unlocked_surveys';
 
 export default function InterviewerDashboard() {
   const navigate = useNavigate();
   const { profile, signOut } = useSupabaseAuthContext();
   const { syncStatus, syncNow, getPendingResponses } = useSyncToSupabase();
-  const { data: surveys, isLoading: surveysLoading, refetch } = useSurveys();
-  const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
+  const [unlockedSurveys, setUnlockedSurveys] = useState<UnlockedSurvey[]>([]);
+  const [selectedSurvey, setSelectedSurvey] = useState<UnlockedSurvey | null>(null);
+  const [isLoadingSurvey, setIsLoadingSurvey] = useState(false);
+
+  // Load unlocked surveys from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem(UNLOCKED_SURVEYS_KEY);
+    if (stored) {
+      try {
+        setUnlockedSurveys(JSON.parse(stored));
+      } catch {
+        localStorage.removeItem(UNLOCKED_SURVEYS_KEY);
+      }
+    }
+  }, []);
+
+  // Save unlocked surveys to localStorage
+  const saveUnlockedSurveys = (surveys: UnlockedSurvey[]) => {
+    setUnlockedSurveys(surveys);
+    localStorage.setItem(UNLOCKED_SURVEYS_KEY, JSON.stringify(surveys));
+  };
+
+  const handleSurveyUnlocked = async (survey: { id: string; titulo: string; descricao: string | null }) => {
+    // Check if already unlocked
+    if (unlockedSurveys.some(s => s.id === survey.id)) {
+      // Select it directly
+      const existing = unlockedSurveys.find(s => s.id === survey.id);
+      if (existing) setSelectedSurvey(existing);
+      return;
+    }
+
+    // Fetch questions for this survey
+    setIsLoadingSurvey(true);
+    try {
+      const { data: perguntas, error } = await supabase
+        .from('perguntas')
+        .select('*')
+        .eq('pesquisa_id', survey.id)
+        .order('ordem', { ascending: true });
+
+      if (error) throw error;
+
+      const fullSurvey: UnlockedSurvey = {
+        ...survey,
+        perguntas: perguntas || []
+      };
+
+      const newList = [...unlockedSurveys, fullSurvey];
+      saveUnlockedSurveys(newList);
+    } catch (error) {
+      console.error('Error fetching questions:', error);
+    } finally {
+      setIsLoadingSurvey(false);
+    }
+  };
+
+  const handleRemoveSurvey = (surveyId: string) => {
+    const newList = unlockedSurveys.filter(s => s.id !== surveyId);
+    saveUnlockedSurveys(newList);
+  };
 
   const handleLogout = async () => {
     await signOut();
@@ -35,20 +102,31 @@ export default function InterviewerDashboard() {
 
   const handleSurveyComplete = () => {
     setSelectedSurvey(null);
-    refetch(); // Refresh surveys list
   };
 
   // If a survey is selected, show the form
   if (selectedSurvey) {
     return (
       <SurveyForm 
-        survey={selectedSurvey} 
+        survey={{
+          id: selectedSurvey.id,
+          titulo: selectedSurvey.titulo,
+          descricao: selectedSurvey.descricao || '',
+          ativa: true,
+          createdAt: new Date().toISOString(),
+          perguntas: selectedSurvey.perguntas.map(p => ({
+            id: p.id,
+            text: p.texto,
+            type: p.tipo as 'text' | 'radio' | 'checkbox' | 'select',
+            required: p.obrigatoria,
+            options: p.opcoes || []
+          }))
+        }}
         onComplete={handleSurveyComplete}
       />
     );
   }
 
-  const activeSurveys = surveys?.filter(s => s.ativa) || [];
   const pendingResponses = getPendingResponses();
 
   return (
@@ -136,38 +214,28 @@ export default function InterviewerDashboard() {
           />
         </div>
 
-        {/* Active Surveys */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <ClipboardList className="w-5 h-5 text-lema-primary" />
-              Pesquisas Ativas
-            </h2>
-            <Button variant="ghost" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-          </div>
+        {/* Survey Code Input */}
+        <SurveyCodeInput onSurveyUnlocked={handleSurveyUnlocked} />
 
-          {surveysLoading ? (
+        {/* Unlocked Surveys */}
+        {unlockedSurveys.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-primary" />
+              Pesquisas Liberadas
+            </h2>
+
             <div className="space-y-3">
-              <Skeleton className="h-24 w-full rounded-xl" />
-              <Skeleton className="h-24 w-full rounded-xl" />
-            </div>
-          ) : activeSurveys.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <ClipboardList className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>Nenhuma pesquisa ativa no momento</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {activeSurveys.map((survey) => (
-                <button
+              {unlockedSurveys.map((survey) => (
+                <div
                   key={survey.id}
-                  onClick={() => setSelectedSurvey(survey)}
-                  className="w-full card-elevated p-4 text-left hover:shadow-lema transition-all duration-200 active:scale-[0.98]"
+                  className="card-elevated p-4 hover:shadow-lema transition-all duration-200"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                    <button
+                      onClick={() => setSelectedSurvey(survey)}
+                      className="flex-1 text-left active:scale-[0.98]"
+                    >
                       <h3 className="font-semibold text-foreground">
                         {survey.titulo}
                       </h3>
@@ -178,15 +246,29 @@ export default function InterviewerDashboard() {
                         <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full">
                           {survey.perguntas.length} perguntas
                         </span>
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full flex items-center gap-1">
+                          <Key className="w-3 h-3" />
+                          Liberada
+                        </span>
                       </div>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveSurvey(survey.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
                     </div>
-                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
                   </div>
-                </button>
+                </div>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Pending Responses */}
         {pendingResponses.length > 0 && (
@@ -200,7 +282,7 @@ export default function InterviewerDashboard() {
               {pendingResponses.map((response) => (
                 <div
                   key={response.id}
-                  className="bg-orange-50 border border-orange-200 rounded-xl p-3"
+                  className="bg-lema-secondary/10 border border-lema-secondary/30 rounded-xl p-3"
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -209,7 +291,7 @@ export default function InterviewerDashboard() {
                         {new Date(response.timestamp).toLocaleString('pt-BR')}
                       </p>
                     </div>
-                    <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded-full">
+                    <span className="text-xs bg-lema-secondary/20 text-lema-secondary px-2 py-1 rounded-full">
                       Pendente
                     </span>
                   </div>
