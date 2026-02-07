@@ -85,6 +85,7 @@ export type Database = {
       pesquisas: {
         Row: {
           ativa: boolean
+          codigo_liberacao: string | null
           created_at: string
           created_by: string | null
           descricao: string | null
@@ -94,6 +95,7 @@ export type Database = {
         }
         Insert: {
           ativa?: boolean
+          codigo_liberacao?: string | null
           created_at?: string
           created_by?: string | null
           descricao?: string | null
@@ -103,6 +105,7 @@ export type Database = {
         }
         Update: {
           ativa?: boolean
+          codigo_liberacao?: string | null
           created_at?: string
           created_by?: string | null
           descricao?: string | null
@@ -212,6 +215,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_liberation_code: { Args: never; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

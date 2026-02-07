@@ -5,6 +5,7 @@ import { MetricCard } from '@/components/MetricCard';
 import { PieChartCard, BarChartCard } from '@/components/Charts';
 import { AIAnalyst } from '@/components/AIAnalyst';
 import { DataGrid } from '@/components/DataGrid';
+import { SurveyManager } from '@/components/SurveyManager';
 import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
 import { useResponses, useAdminStats } from '@/hooks/useResponses';
 import { mockDailyStats, getResponseDistribution } from '@/data/mockData';
@@ -20,7 +21,8 @@ import {
   Target,
   TrendingUp,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  Settings
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -52,6 +54,7 @@ export default function AdminDashboard() {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'surveys', label: 'Pesquisas', icon: ClipboardList },
     { id: 'ai', label: 'IA Analista', icon: Bot },
     { id: 'data', label: 'Dados', icon: Table2 },
   ];
@@ -122,16 +125,16 @@ export default function AdminDashboard() {
       </header>
 
       {/* Mobile Navigation */}
-      <div className="lg:hidden sticky top-16 z-40 bg-card border-b">
-        <div className="flex">
+      <div className="lg:hidden sticky top-16 z-40 bg-card border-b overflow-x-auto">
+        <div className="flex min-w-max">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={cn(
-                'flex-1 flex flex-col items-center gap-1 py-3 transition-all',
+                'flex-1 flex flex-col items-center gap-1 py-3 px-4 transition-all min-w-[80px]',
                 activeTab === item.id
-                  ? 'text-lema-primary border-b-2 border-lema-primary'
+                  ? 'text-primary border-b-2 border-primary'
                   : 'text-muted-foreground'
               )}
             >
@@ -212,7 +215,7 @@ export default function AdminDashboard() {
             {/* Recent Activity */}
             <div className="card-elevated p-6">
               <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-lema-primary" />
+                <Calendar className="w-5 h-5 text-primary" />
                 Atividade Recente
               </h3>
               {responsesLoading ? (
@@ -259,6 +262,16 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'surveys' && (
+          <div className="space-y-6 animate-fade-in">
+            <div>
+              <h1 className="text-2xl font-bold">Gerenciar Pesquisas</h1>
+              <p className="text-muted-foreground">Crie e gerencie pesquisas com códigos de liberação</p>
+            </div>
+            <SurveyManager />
           </div>
         )}
 
