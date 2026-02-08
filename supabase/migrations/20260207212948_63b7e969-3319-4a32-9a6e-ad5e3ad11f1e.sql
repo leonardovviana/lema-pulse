@@ -1,8 +1,13 @@
 -- 1. Create enum for user roles
-CREATE TYPE public.app_role AS ENUM ('admin', 'entrevistador');
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN 
+    CREATE TYPE public.app_role AS ENUM ('admin', 'entrevistador'); 
+  END IF; 
+END $$;
 
 -- 2. Create user_roles table (security best practice)
-CREATE TABLE public.user_roles (
+CREATE TABLE IF NOT EXISTS public.user_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     role app_role NOT NULL,
@@ -11,7 +16,7 @@ CREATE TABLE public.user_roles (
 );
 
 -- 3. Create profiles table
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
     nome TEXT NOT NULL,
@@ -21,7 +26,7 @@ CREATE TABLE public.profiles (
 );
 
 -- 4. Create surveys (pesquisas) table
-CREATE TABLE public.pesquisas (
+CREATE TABLE IF NOT EXISTS public.pesquisas (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     titulo TEXT NOT NULL,
     descricao TEXT,
@@ -32,7 +37,7 @@ CREATE TABLE public.pesquisas (
 );
 
 -- 5. Create questions (perguntas) table
-CREATE TABLE public.perguntas (
+CREATE TABLE IF NOT EXISTS public.perguntas (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     pesquisa_id UUID REFERENCES public.pesquisas(id) ON DELETE CASCADE NOT NULL,
     texto TEXT NOT NULL,
@@ -44,7 +49,7 @@ CREATE TABLE public.perguntas (
 );
 
 -- 6. Create survey responses (respostas) table
-CREATE TABLE public.respostas (
+CREATE TABLE IF NOT EXISTS public.respostas (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     pesquisa_id UUID REFERENCES public.pesquisas(id) ON DELETE CASCADE NOT NULL,
     entrevistador_id UUID REFERENCES auth.users(id) ON DELETE SET NULL NOT NULL,
@@ -58,7 +63,7 @@ CREATE TABLE public.respostas (
 );
 
 -- 7. Create daily stats table for performance tracking
-CREATE TABLE public.metas_diarias (
+CREATE TABLE IF NOT EXISTS public.metas_diarias (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entrevistador_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -107,6 +112,12 @@ AS $$
 $$;
 
 -- 11. RLS Policies for user_roles
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can view their own roles" ON public.user_roles;
+    DROP POLICY IF EXISTS "Admins can view all roles" ON public.user_roles;
+    DROP POLICY IF EXISTS "Admins can manage roles" ON public.user_roles;
+END $$;
+
 CREATE POLICY "Users can view their own roles"
 ON public.user_roles FOR SELECT
 TO authenticated
@@ -124,6 +135,12 @@ USING (public.has_role(auth.uid(), 'admin'))
 WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- 12. RLS Policies for profiles
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can view all profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+END $$;
+
 CREATE POLICY "Users can view all profiles"
 ON public.profiles FOR SELECT
 TO authenticated
@@ -141,6 +158,11 @@ TO authenticated
 WITH CHECK (auth.uid() = user_id);
 
 -- 13. RLS Policies for pesquisas
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Anyone can view active surveys" ON public.pesquisas;
+    DROP POLICY IF EXISTS "Admins can manage surveys" ON public.pesquisas;
+END $$;
+
 CREATE POLICY "Anyone can view active surveys"
 ON public.pesquisas FOR SELECT
 TO authenticated
@@ -153,6 +175,11 @@ USING (public.has_role(auth.uid(), 'admin'))
 WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- 14. RLS Policies for perguntas
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Anyone can view questions of active surveys" ON public.perguntas;
+    DROP POLICY IF EXISTS "Admins can manage questions" ON public.perguntas;
+END $$;
+
 CREATE POLICY "Anyone can view questions of active surveys"
 ON public.perguntas FOR SELECT
 TO authenticated
@@ -171,6 +198,12 @@ USING (public.has_role(auth.uid(), 'admin'))
 WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- 15. RLS Policies for respostas
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Entrevistadores can view their own responses" ON public.respostas;
+    DROP POLICY IF EXISTS "Entrevistadores can insert their responses" ON public.respostas;
+    DROP POLICY IF EXISTS "Admins can view all responses" ON public.respostas;
+END $$;
+
 CREATE POLICY "Entrevistadores can view their own responses"
 ON public.respostas FOR SELECT
 TO authenticated
@@ -187,6 +220,12 @@ TO authenticated
 USING (public.has_role(auth.uid(), 'admin'));
 
 -- 16. RLS Policies for metas_diarias
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can view their own goals" ON public.metas_diarias;
+    DROP POLICY IF EXISTS "Users can manage their own goals" ON public.metas_diarias;
+    DROP POLICY IF EXISTS "Admins can manage all goals" ON public.metas_diarias;
+END $$;
+
 CREATE POLICY "Users can view their own goals"
 ON public.metas_diarias FOR SELECT
 TO authenticated
@@ -214,6 +253,11 @@ END;
 $$ LANGUAGE plpgsql SET search_path = public;
 
 -- 18. Apply updated_at triggers
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
+    DROP TRIGGER IF EXISTS update_pesquisas_updated_at ON public.pesquisas;
+END $$;
+
 CREATE TRIGGER update_profiles_updated_at
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW
@@ -240,6 +284,10 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 20. Create trigger for new user signup
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+END $$;
+
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW
@@ -247,9 +295,16 @@ CREATE TRIGGER on_auth_user_created
 
 -- 21. Create storage bucket for audio recordings
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('audio-recordings', 'audio-recordings', false);
+VALUES ('audio-recordings', 'audio-recordings', false)
+ON CONFLICT (id) DO NOTHING;
 
 -- 22. Storage policies for audio recordings
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can upload their own audio" ON storage.objects;
+    DROP POLICY IF EXISTS "Users can view their own audio" ON storage.objects;
+    DROP POLICY IF EXISTS "Admins can view all audio" ON storage.objects;
+END $$;
+
 CREATE POLICY "Users can upload their own audio"
 ON storage.objects FOR INSERT
 TO authenticated
@@ -278,8 +333,8 @@ USING (
 );
 
 -- 23. Create index for better query performance
-CREATE INDEX idx_respostas_pesquisa_id ON public.respostas(pesquisa_id);
-CREATE INDEX idx_respostas_entrevistador_id ON public.respostas(entrevistador_id);
-CREATE INDEX idx_respostas_created_at ON public.respostas(created_at DESC);
-CREATE INDEX idx_perguntas_pesquisa_id ON public.perguntas(pesquisa_id);
-CREATE INDEX idx_metas_diarias_data ON public.metas_diarias(data);
+CREATE INDEX IF NOT EXISTS idx_respostas_pesquisa_id ON public.respostas(pesquisa_id);
+CREATE INDEX IF NOT EXISTS idx_respostas_entrevistador_id ON public.respostas(entrevistador_id);
+CREATE INDEX IF NOT EXISTS idx_respostas_created_at ON public.respostas(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_perguntas_pesquisa_id ON public.perguntas(pesquisa_id);
+CREATE INDEX IF NOT EXISTS idx_metas_diarias_data ON public.metas_diarias(data);

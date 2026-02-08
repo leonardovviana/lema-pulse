@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      blocos_perguntas: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          id: string
+          ordem: number
+          pesquisa_id: string
+          titulo: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          ordem?: number
+          pesquisa_id: string
+          titulo: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          ordem?: number
+          pesquisa_id?: string
+          titulo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blocos_perguntas_pesquisa_id_fkey"
+            columns: ["pesquisa_id"]
+            isOneToOne: false
+            referencedRelation: "pesquisas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       metas_diarias: {
         Row: {
           concluidas: number
@@ -43,36 +78,55 @@ export type Database = {
       }
       perguntas: {
         Row: {
+          bloco_id: string | null
           created_at: string
           id: string
           obrigatoria: boolean
           opcoes: string[] | null
+          opcoes_sugeridas: string[] | null
           ordem: number
           pesquisa_id: string
+          permite_outro: boolean
           texto: string
+          tipo_pergunta: string
           tipo: string
         }
         Insert: {
+          bloco_id?: string | null
           created_at?: string
           id?: string
           obrigatoria?: boolean
           opcoes?: string[] | null
+          opcoes_sugeridas?: string[] | null
           ordem?: number
           pesquisa_id: string
+          permite_outro?: boolean
           texto: string
+          tipo_pergunta?: string
           tipo: string
         }
         Update: {
+          bloco_id?: string | null
           created_at?: string
           id?: string
           obrigatoria?: boolean
           opcoes?: string[] | null
+          opcoes_sugeridas?: string[] | null
           ordem?: number
           pesquisa_id?: string
+          permite_outro?: boolean
           texto?: string
+          tipo_pergunta?: string
           tipo?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "perguntas_bloco_id_fkey"
+            columns: ["bloco_id"]
+            isOneToOne: false
+            referencedRelation: "blocos_perguntas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "perguntas_pesquisa_id_fkey"
             columns: ["pesquisa_id"]

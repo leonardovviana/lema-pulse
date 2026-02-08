@@ -1,19 +1,19 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, Loader2, Users, Shield } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
+import { Eye, EyeOff, Loader2, Lock, Mail, Shield, Users } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 type UserType = 'entrevistador' | 'admin';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { signIn, signUp, isLoading: authLoading } = useSupabaseAuth();
+  const { signIn, signUp, isLoading: authLoading } = useSupabaseAuthContext();
   
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -25,16 +25,42 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [nome, setNome] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [accessCode, setAccessCode] = useState('');
 
   const resetForm = () => {
     setEmail('');
     setPassword('');
     setNome('');
     setConfirmPassword('');
+    setAccessCode('');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (activeTab === 'entrevistador') {
+      if (!accessCode) {
+        toast.error('Informe o código de acesso');
+        return;
+      }
+      
+      setIsLoading(true);
+      try {
+        // Login using the access code as both password and part of the dummy email
+        const dummyEmail = `${accessCode}@lema.pulse`;
+        await signIn(dummyEmail, accessCode);
+        toast.success('Login realizado com sucesso!');
+      } catch (error: any) {
+        toast.error('Código inválido', {
+          description: 'Verifique o código e tente novamente.'
+        });
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Admin Login Logic
     if (!email || !password) {
       toast.error('Preencha todos os campos');
       return;
@@ -142,168 +168,49 @@ export default function AuthPage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* Entrevistador Tab - Login + Signup */}
+            {/* Entrevistador Tab - Access Code Only */}
             <TabsContent value="entrevistador" className="mt-6">
               <div className="bg-card rounded-xl shadow-lg border p-6">
-                {authMode === 'login' ? (
-                  <form onSubmit={handleLogin} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                        <Input
-                          id="email"
-                          type="email"
-                          placeholder="seu@email.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="pl-10 h-12"
-                        />
-                      </div>
-                    </div>
+                <form onSubmit={handleLogin} className="space-y-6">
+                  <div className="text-center space-y-2 mb-6">
+                    <p className="text-sm text-muted-foreground">
+                      Digite o código de acesso fornecido pelo administrador
+                    </p>
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Senha</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                        <Input
-                          id="password"
-                          type={showPassword ? 'text' : 'password'}
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="pl-10 pr-10 h-12"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={isLoading}
-                      className="w-full h-12 text-lg bg-primary hover:bg-primary/90"
-                    >
-                      {isLoading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        'Entrar'
-                      )}
-                    </Button>
-
-                    <div className="text-center">
+                  <div className="space-y-2">
+                    <Label htmlFor="access-code">Código de Acesso</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Input
+                        id="access-code"
+                        type={showPassword ? 'text' : 'password'}
+                        value={accessCode}
+                        onChange={(e) => setAccessCode(e.target.value)}
+                        className="pl-10 pr-10 h-12 text-center text-lg tracking-widest"
+                      />
                       <button
                         type="button"
-                        onClick={() => {
-                          setAuthMode('signup');
-                          resetForm();
-                        }}
-                        className="text-sm text-primary hover:underline"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
-                        Não tem conta? Cadastre-se
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
                     </div>
-                  </form>
-                ) : (
-                  <form onSubmit={handleSignup} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="nome">Nome Completo</Label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                        <Input
-                          id="nome"
-                          type="text"
-                          placeholder="Seu nome"
-                          value={nome}
-                          onChange={(e) => setNome(e.target.value)}
-                          className="pl-10 h-12"
-                        />
-                      </div>
-                    </div>
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                        <Input
-                          id="signup-email"
-                          type="email"
-                          placeholder="seu@email.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="pl-10 h-12"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password">Senha</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                        <Input
-                          id="signup-password"
-                          type={showPassword ? 'text' : 'password'}
-                          placeholder="Mínimo 6 caracteres"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="pl-10 pr-10 h-12"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="confirm-password">Confirmar Senha</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                        <Input
-                          id="confirm-password"
-                          type={showPassword ? 'text' : 'password'}
-                          placeholder="Repita a senha"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          className="pl-10 h-12"
-                        />
-                      </div>
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={isLoading}
-                      className="w-full h-12 text-lg bg-primary hover:bg-primary/90"
-                    >
-                      {isLoading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        'Criar Conta'
-                      )}
-                    </Button>
-
-                    <div className="text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthMode('login');
-                          resetForm();
-                        }}
-                        className="text-sm text-primary hover:underline"
-                      >
-                        Já tem conta? Faça login
-                      </button>
-                    </div>
-                  </form>
-                )}
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full h-12 text-lg bg-primary hover:bg-primary/90"
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      'Entrar no Painel'
+                    )}
+                  </Button>
+                </form>
               </div>
             </TabsContent>
 
@@ -318,7 +225,6 @@ export default function AuthPage() {
                       <Input
                         id="admin-email"
                         type="email"
-                        placeholder="admin@empresa.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="pl-10 h-12"
@@ -333,7 +239,6 @@ export default function AuthPage() {
                       <Input
                         id="admin-password"
                         type={showPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="pl-10 pr-10 h-12"
@@ -375,7 +280,7 @@ export default function AuthPage() {
       {/* Footer */}
       <footer className="p-4 text-center">
         <p className="text-xs text-muted-foreground">
-          © 2024 Lema Pesquisas. Todos os direitos reservados.
+          © 2026 Lema Pesquisas. Todos os direitos reservados.
         </p>
       </footer>
     </div>

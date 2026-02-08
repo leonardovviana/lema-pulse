@@ -1,14 +1,13 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
-import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Shield, Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Eye, EyeOff, Shield, Users } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -103,7 +102,6 @@ export default function LoginPage() {
                         type={showPin ? 'text' : 'password'}
                         value={pin}
                         onChange={(e) => handlePinChange(e.target.value)}
-                        placeholder="••••"
                         className="h-14 text-center text-2xl tracking-[0.5em] font-mono"
                         maxLength={4}
                       />
@@ -129,11 +127,6 @@ export default function LoginPage() {
                   </Button>
                 </form>
 
-                <div className="mt-4 p-3 bg-muted rounded-lg">
-                  <p className="text-xs text-muted-foreground text-center">
-                    <strong>Demo:</strong> Use PIN <code className="bg-background px-1 rounded">1234</code> (Maria) ou <code className="bg-background px-1 rounded">5678</code> (João)
-                  </p>
-                </div>
               </div>
             </TabsContent>
 
@@ -148,7 +141,6 @@ export default function LoginPage() {
                         type={showPin ? 'text' : 'password'}
                         value={pin}
                         onChange={(e) => handlePinChange(e.target.value)}
-                        placeholder="••••"
                         className="h-14 text-center text-2xl tracking-[0.5em] font-mono"
                         maxLength={4}
                       />
@@ -171,11 +163,6 @@ export default function LoginPage() {
                   </Button>
                 </form>
 
-                <div className="mt-4 p-3 bg-muted rounded-lg">
-                  <p className="text-xs text-muted-foreground text-center">
-                    <strong>Demo:</strong> Use PIN <code className="bg-background px-1 rounded">0000</code> (Ana Gerente)
-                  </p>
-                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -185,7 +172,7 @@ export default function LoginPage() {
       {/* Footer */}
       <footer className="p-4 text-center">
         <p className="text-xs text-muted-foreground">
-          © 2024 Lema Pesquisas. Todos os direitos reservados.
+          © 2026 Lema Pesquisas. Todos os direitos reservados.
         </p>
       </footer>
     </div>

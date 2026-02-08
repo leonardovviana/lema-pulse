@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Session } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type AppRole = 'admin' | 'entrevistador';
 
@@ -8,7 +8,7 @@ interface AuthState {
   user: User | null;
   session: Session | null;
   role: AppRole | null;
-  profile: { id: string; nome: string; avatar_url?: string } | null;
+  profile: { id: string; nome: string; avatar_url?: string; is_admin?: boolean } | null;
   isLoading: boolean;
 }
 
@@ -21,38 +21,50 @@ export function useSupabaseAuth() {
     isLoading: true
   });
 
+  // useRef so the mounted flag survives across async gaps without re-rendering
+  const mountedRef = useRef(true);
+
   const fetchUserData = useCallback(async (userId: string) => {
     try {
-      // Fetch role
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .maybeSingle();
+      // Run both queries in parallel for speed
+      const [roleResult, profileResult] = await Promise.all([
+        supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        supabase
+          .from('profiles')
+          .select('id, nome, avatar_url, is_admin')
+          .eq('user_id', userId)
+          .maybeSingle()
+      ]);
 
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('id, nome, avatar_url')
-        .eq('user_id', userId)
-        .maybeSingle();
+      const roleData = roleResult.data;
+      const profileData = profileResult.data;
 
-      return {
-        role: (roleData?.role as AppRole) || null,
-        profile: profileData
-      };
+      const isAdmin = !!profileData?.is_admin;
+      const role = isAdmin ? 'admin' : (roleData?.role as AppRole) || null;
+
+      return { role, profile: profileData };
     } catch (error) {
       console.error('Error fetching user data:', error);
       return { role: null, profile: null };
     }
   }, []);
 
-  useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
+  /**
+   * Central function that resolves auth state from a session.
+   * Always guarantees isLoading becomes false when it finishes.
+   */
+  const resolveSession = useCallback(
+    async (session: Session | null) => {
+      if (!mountedRef.current) return;
+
+      if (session?.user) {
+        try {
           const userData = await fetchUserData(session.user.id);
+          if (!mountedRef.current) return;
           setAuthState({
             user: session.user,
             session,
@@ -60,36 +72,67 @@ export function useSupabaseAuth() {
             profile: userData.profile,
             isLoading: false
           });
-        } else {
+        } catch {
+          if (!mountedRef.current) return;
+          // Even on error, stop loading with whatever we have
           setAuthState({
-            user: null,
-            session: null,
+            user: session.user,
+            session,
             role: null,
             profile: null,
             isLoading: false
           });
         }
+      } else {
+        setAuthState({
+          user: null,
+          session: null,
+          role: null,
+          profile: null,
+          isLoading: false
+        });
+      }
+    },
+    [fetchUserData]
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    // ---- FAIL-SAFE: guarantees loading stops no matter what ----
+    const failSafe = window.setTimeout(() => {
+      if (mountedRef.current) {
+        console.warn('[Auth] Fail-safe timeout – forcing isLoading = false');
+        setAuthState(prev => (prev.isLoading ? { ...prev, isLoading: false } : prev));
+      }
+    }, 5000);
+
+    // 1) Get initial session imperatively (reliable in all Supabase versions)
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => resolveSession(session))
+      .catch(() => {
+        if (mountedRef.current) {
+          setAuthState(prev => ({ ...prev, isLoading: false }));
+        }
+      });
+
+    // 2) Listen for future auth changes (sign-in, sign-out, token refresh).
+    //    IMPORTANT: use setTimeout(0) to defer Supabase queries – calling
+    //    another Supabase function synchronously inside onAuthStateChange
+    //    can deadlock the JS client.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setTimeout(() => resolveSession(session), 0);
       }
     );
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const userData = await fetchUserData(session.user.id);
-        setAuthState({
-          user: session.user,
-          session,
-          role: userData.role,
-          profile: userData.profile,
-          isLoading: false
-        });
-      } else {
-        setAuthState(prev => ({ ...prev, isLoading: false }));
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [fetchUserData]);
+    return () => {
+      mountedRef.current = false;
+      window.clearTimeout(failSafe);
+      subscription.unsubscribe();
+    };
+  }, [resolveSession]);
 
   const signUp = useCallback(async (email: string, password: string, nome: string) => {
     const { data, error } = await supabase.auth.signUp({

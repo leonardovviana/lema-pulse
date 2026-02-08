@@ -1,30 +1,38 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { AIAnalyst } from '@/components/AIAnalyst';
+import { BarChartCard, PieChartCard } from '@/components/Charts';
+import { DataGrid } from '@/components/DataGrid';
+import { InterviewerManager } from '@/components/InterviewerManager';
 import { Logo } from '@/components/Logo';
 import { MetricCard } from '@/components/MetricCard';
-import { PieChartCard, BarChartCard } from '@/components/Charts';
-import { AIAnalyst } from '@/components/AIAnalyst';
-import { DataGrid } from '@/components/DataGrid';
 import { SurveyManager } from '@/components/SurveyManager';
-import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
-import { useResponses, useAdminStats } from '@/hooks/useResponses';
-import { mockDailyStats, getResponseDistribution } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  LayoutDashboard, 
-  ClipboardList, 
-  Bot, 
-  Table2,
-  LogOut,
-  Users,
-  Target,
-  TrendingUp,
-  Calendar,
-  RefreshCw,
-  Settings
-} from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
+import { useAdminStats, useResponses } from '@/hooks/useResponses';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import {
+    Bot,
+    Calendar,
+    ClipboardList,
+    LayoutDashboard,
+    LogOut,
+    RefreshCw,
+    Table2,
+    Target,
+    TrendingUp,
+    Users
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -32,6 +40,20 @@ export default function AdminDashboard() {
   const { data: responses, isLoading: responsesLoading, refetch } = useResponses();
   const { data: stats, isLoading: statsLoading } = useAdminStats();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [dataFilterSurveyId, setDataFilterSurveyId] = useState<string>('all');
+
+  // Fetch surveys list for filter dropdown
+  const { data: surveysList } = useQuery({
+    queryKey: ['admin-surveys-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pesquisas')
+        .select('id, titulo')
+        .order('titulo', { ascending: true });
+      if (error) throw error;
+      return data;
+    }
+  });
 
   const handleLogout = async () => {
     await signOut();
@@ -40,23 +62,55 @@ export default function AdminDashboard() {
 
   const allResponses = responses || [];
 
+  // Filtered responses for Dados tab
+  const dataFilteredResponses = useMemo(() => {
+    if (dataFilterSurveyId === 'all') return allResponses;
+    return allResponses.filter(r => r.surveyId === dataFilterSurveyId);
+  }, [allResponses, dataFilterSurveyId]);
+
   // Calculate metrics from stats or responses
-  const totalSurveys = stats?.totalResponses || allResponses.length;
+  const totalColetas = stats?.totalResponses || allResponses.length;
   const uniqueInterviewers = stats?.activeInterviewers || 0;
   const todayCount = stats?.todayResponses || 0;
   const dailyTarget = 20;
 
-  // Get distribution data for pie chart (from responses)
+  // Aggregate response distribution by survey title
   const distributionData = useMemo(() => {
-    // Use mock data for now, can be replaced with real data
-    return getResponseDistribution('survey-1', 'q1');
-  }, []);
+    if (!allResponses.length) return [];
+
+    const counts = new Map<string, number>();
+    allResponses.forEach((response) => {
+      const title = response.surveyTitulo || 'Sem titulo';
+      counts.set(title, (counts.get(title) || 0) + 1);
+    });
+
+    return Array.from(counts.entries()).map(([name, value]) => ({ name, value }));
+  }, [allResponses]);
+
+  const dailyStatsData = useMemo(() => {
+    if (!allResponses.length) return [];
+
+    const counts: Record<string, number> = {};
+    allResponses.forEach((response) => {
+      const date = new Date(response.timestamp).toISOString().split('T')[0];
+      counts[date] = (counts[date] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, completed]) => ({
+        date,
+        completed,
+        target: dailyTarget,
+      }));
+  }, [allResponses, dailyTarget]);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'surveys', label: 'Pesquisas', icon: ClipboardList },
+    { id: 'interviewers', label: 'Entrevistadores', icon: Users },
     { id: 'ai', label: 'IA Analista', icon: Bot },
-    { id: 'data', label: 'Dados', icon: Table2 },
+    { id: 'data', label: 'Coletas', icon: Table2 },
   ];
 
   return (
@@ -153,7 +207,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold">Dashboard</h1>
-                <p className="text-muted-foreground">Visão geral das pesquisas</p>
+                <p className="text-muted-foreground">Visão geral das coletas</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -171,9 +225,9 @@ export default function AdminDashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <MetricCard
-                  title="Total de Pesquisas"
-                  value={totalSurveys}
-                  subtitle="Todas as respostas coletadas"
+                  title="Total de Coletas"
+                  value={totalColetas}
+                  subtitle="Questiónarios respondidos"
                   icon={ClipboardList}
                   trend={{ value: 12, isPositive: true }}
                   variant="primary"
@@ -203,12 +257,12 @@ export default function AdminDashboard() {
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <PieChartCard
-                title="Distribuição: Qualidade do Atendimento"
+                title="Distribuição de coletas por pesquisa"
                 data={distributionData}
               />
               <BarChartCard
                 title="Produtividade Diária"
-                data={mockDailyStats}
+                data={dailyStatsData}
               />
             </div>
 
@@ -226,7 +280,7 @@ export default function AdminDashboard() {
                 </div>
               ) : allResponses.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
-                  Nenhuma resposta coletada ainda
+                  Nenhuma coleta realizada ainda
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -275,6 +329,12 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {activeTab === 'interviewers' && (
+          <div className="space-y-6 animate-fade-in">
+            <InterviewerManager />
+          </div>
+        )}
+
         {activeTab === 'ai' && (
           <div className="space-y-6 animate-fade-in">
             <div>
@@ -287,20 +347,33 @@ export default function AdminDashboard() {
 
         {activeTab === 'data' && (
           <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <h1 className="text-2xl font-bold">Dados das Pesquisas</h1>
-                <p className="text-muted-foreground">Visualize e exporte todas as respostas</p>
+                <h1 className="text-2xl font-bold">Dados das Coletas</h1>
+                <p className="text-muted-foreground">Visualize e exporte as coletas realizadas</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Atualizar
-              </Button>
+              <div className="flex items-center gap-3">
+                <Select value={dataFilterSurveyId} onValueChange={setDataFilterSurveyId}>
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Filtrar por pesquisa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as pesquisas</SelectItem>
+                    {surveysList?.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.titulo}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Atualizar
+                </Button>
+              </div>
             </div>
             {responsesLoading ? (
               <Skeleton className="h-96 w-full rounded-xl" />
             ) : (
-              <DataGrid responses={allResponses} />
+              <DataGrid responses={dataFilteredResponses} />
             )}
           </div>
         )}

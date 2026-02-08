@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { SurveyResponse } from '@/types/survey';
+import { AnswerValue, SurveyResponse } from '@/types/survey';
 
 export function useResponses() {
   return useQuery({
@@ -22,7 +22,7 @@ export function useResponses() {
           pesquisas (
             titulo
           ),
-          profiles:entrevistador_id (
+          profiles:profiles!respostas_entrevistador_profile_fkey (
             nome
           )
         `)
@@ -36,7 +36,7 @@ export function useResponses() {
         surveyTitulo: (r.pesquisas as any)?.titulo || 'Pesquisa Desconhecida',
         entrevistadorId: r.entrevistador_id,
         entrevistadorNome: (r.profiles as any)?.nome || 'Desconhecido',
-        respostas: r.respostas as Record<string, string | string[]>,
+        respostas: r.respostas as Record<string, AnswerValue>,
         audioBlob: r.audio_url || undefined,
         gps: r.latitude && r.longitude ? {
           latitude: r.latitude,
@@ -83,7 +83,7 @@ export function useMyResponses() {
         surveyTitulo: (r.pesquisas as any)?.titulo || 'Pesquisa Desconhecida',
         entrevistadorId: r.entrevistador_id,
         entrevistadorNome: '',
-        respostas: r.respostas as Record<string, string | string[]>,
+        respostas: r.respostas as Record<string, AnswerValue>,
         audioBlob: r.audio_url || undefined,
         gps: r.latitude && r.longitude ? {
           latitude: r.latitude,

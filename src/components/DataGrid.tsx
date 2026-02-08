@@ -25,7 +25,7 @@ export function DataGrid({ responses }: DataGridProps) {
 
   const handlePlay = (id: string, audioBlob?: string) => {
     if (!audioBlob) {
-      toast.info('Áudio não disponível para esta pesquisa');
+      toast.info('Áudio não disponível para esta coleta');
       return;
     }
 
@@ -35,7 +35,7 @@ export function DataGrid({ responses }: DataGridProps) {
     } else {
       setPlayingId(id);
       // Would play audio here
-      toast.success('Reproduzindo áudio da pesquisa');
+      toast.success('Reproduzindo áudio da coleta');
       setTimeout(() => setPlayingId(null), 3000);
     }
   };
@@ -66,7 +66,7 @@ export function DataGrid({ responses }: DataGridProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `lema_pesquisas_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `lema_coletas_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 
@@ -91,9 +91,9 @@ export function DataGrid({ responses }: DataGridProps) {
           </style>
         </head>
         <body>
-          <h1>Relatório Lema Pesquisas</h1>
+          <h1>Relatório de Coletas</h1>
           <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-          <p>Total de pesquisas: ${responses.length}</p>
+          <p>Total de coletas: ${responses.length}</p>
           <table>
             <tr>
               <th>ID</th>
@@ -122,7 +122,7 @@ export function DataGrid({ responses }: DataGridProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `lema_relatorio_${new Date().toISOString().split('T')[0]}.doc`;
+    link.download = `lema_coletas_${new Date().toISOString().split('T')[0]}.doc`;
     link.click();
     URL.revokeObjectURL(url);
 
@@ -135,7 +135,7 @@ export function DataGrid({ responses }: DataGridProps) {
     <div className="card-elevated">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
-        <h3 className="font-semibold text-lg">Pesquisas Concluídas</h3>
+        <h3 className="font-semibold text-lg">Coletas</h3>
         <div className="flex gap-2">
           <Button 
             variant="outline" 
@@ -176,7 +176,7 @@ export function DataGrid({ responses }: DataGridProps) {
             {responses.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  Nenhuma pesquisa encontrada
+                  Nenhuma coleta encontrada
                 </TableCell>
               </TableRow>
             ) : (
@@ -257,7 +257,7 @@ export function DataGrid({ responses }: DataGridProps) {
       {/* Footer */}
       <div className="p-4 border-t bg-muted/30">
         <p className="text-sm text-muted-foreground">
-          Exibindo {responses.length} registro(s)
+          Exibindo {responses.length} coleta(s)
         </p>
       </div>
     </div>

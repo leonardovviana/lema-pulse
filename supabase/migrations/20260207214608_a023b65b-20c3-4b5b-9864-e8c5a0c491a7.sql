@@ -1,9 +1,15 @@
 -- Add liberation code to surveys for interviewers
-ALTER TABLE public.pesquisas 
-ADD COLUMN codigo_liberacao TEXT UNIQUE;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'pesquisas' AND column_name = 'codigo_liberacao'
+  ) THEN
+    ALTER TABLE public.pesquisas ADD COLUMN codigo_liberacao TEXT UNIQUE;
+  END IF;
+END $$;
 
 -- Create index for faster lookups
-CREATE INDEX idx_pesquisas_codigo_liberacao ON public.pesquisas(codigo_liberacao);
+CREATE INDEX IF NOT EXISTS idx_pesquisas_codigo_liberacao ON public.pesquisas(codigo_liberacao);
 
 -- Function to generate random 6-character code
 CREATE OR REPLACE FUNCTION public.generate_liberation_code()
@@ -34,6 +40,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS trigger_set_liberation_code ON public.pesquisas;
+END $$;
 
 CREATE TRIGGER trigger_set_liberation_code
 BEFORE INSERT ON public.pesquisas

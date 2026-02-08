@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { AIMessage, SurveyResponse } from '@/types/survey';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Bot, Loader2, Send, Sparkles, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 interface AIAnalystProps {
   responses: SurveyResponse[];
@@ -266,7 +266,6 @@ Com base nos **${responses.length} registros** disponíveis:
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Pergunte sobre os dados..."
             className="flex-1"
             disabled={isLoading}
           />

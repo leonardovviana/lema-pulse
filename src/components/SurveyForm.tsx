@@ -1,21 +1,20 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, MapPin, Mic, Check, AlertCircle } from 'lucide-react';
-import { Survey, Question, SurveyResponse } from '@/types/survey';
+import { RecordingIndicator } from '@/components/RecordingIndicator';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useSyncToSupabase } from '@/hooks/useSyncToSupabase';
-import { RecordingIndicator } from '@/components/RecordingIndicator';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { AnswerValue, Question, Survey, SurveyResponse } from '@/types/survey';
+import { AlertCircle, Check, ChevronLeft, ChevronRight, MapPin, Mic } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 interface SurveyFormProps {
@@ -31,7 +30,7 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
   const { getCurrentPosition, latitude, longitude } = useGeolocation();
   
   const [currentStep, setCurrentStep] = useState(0); // 0 = start, 1+ = questions
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [gps, setGps] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,8 +54,30 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
     setCurrentStep(1);
   };
 
-  const handleAnswer = (questionId: string, value: string | string[]) => {
+  const handleAnswer = (questionId: string, value: AnswerValue) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  const handleOptionChange = (question: Question, value: string | string[]) => {
+    if (question.promptType === 'mista' && question.allowOther) {
+      const current = answers[question.id];
+      const other =
+        current && typeof current === 'object' && !Array.isArray(current)
+          ? current.outro
+          : '';
+      handleAnswer(question.id, { opcao: value, outro: other || '' });
+      return;
+    }
+    handleAnswer(question.id, value);
+  };
+
+  const handleOtherChange = (question: Question, otherValue: string) => {
+    const current = answers[question.id];
+    const opcao =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? current.opcao
+        : undefined;
+    handleAnswer(question.id, { opcao, outro: otherValue });
   };
 
   const handleCheckboxChange = (questionId: string, option: string, checked: boolean) => {
@@ -77,7 +98,16 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
     if (!question.required) return true;
     
     const answer = answers[question.id];
+    if (question.promptType === 'mista' && question.allowOther) {
+      if (answer && typeof answer === 'object' && !Array.isArray(answer)) {
+        const opcao = answer.opcao;
+        const outro = answer.outro?.trim();
+        if (Array.isArray(opcao)) return opcao.length > 0 || !!outro;
+        return !!opcao || !!outro;
+      }
+    }
     if (Array.isArray(answer)) return answer.length > 0;
+    if (answer && typeof answer === 'object') return false;
     return !!answer;
   };
 
@@ -136,14 +166,66 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
     }
   };
 
+  const renderSuggestedOptions = (question: Question) => {
+    if (!question.suggestedOptions || question.suggestedOptions.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap gap-2 pt-2">
+        {question.suggestedOptions.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => handleAnswer(question.id, option)}
+            className="px-3 py-1 rounded-full border text-sm hover:bg-accent"
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const renderOtherField = (question: Question) => {
+    if (question.promptType !== 'mista' || !question.allowOther) return null;
+
+    const current = answers[question.id];
+    const otherValue =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? current.outro || ''
+        : '';
+
+    return (
+      <div className="pt-3">
+        <Label className="text-sm">Outro (especifique)</Label>
+        <Textarea
+          value={otherValue}
+          onChange={(e) => handleOtherChange(question, e.target.value)}
+          className="min-h-[90px] text-base mt-2"
+        />
+      </div>
+    );
+  };
+
   const renderQuestion = (question: Question) => {
+    if (question.promptType === 'espontanea') {
+      return (
+        <div>
+          <Textarea
+            value={(answers[question.id] as string) || ''}
+            onChange={(e) => handleAnswer(question.id, e.target.value)}
+            className="min-h-[120px] text-lg"
+          />
+          {renderSuggestedOptions(question)}
+        </div>
+      );
+    }
+
     switch (question.type) {
       case 'text':
         return (
           <Textarea
             value={(answers[question.id] as string) || ''}
             onChange={(e) => handleAnswer(question.id, e.target.value)}
-            placeholder="Digite sua resposta..."
             className="min-h-[120px] text-lg"
           />
         );
@@ -151,8 +233,14 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
       case 'radio':
         return (
           <RadioGroup
-            value={(answers[question.id] as string) || ''}
-            onValueChange={(value) => handleAnswer(question.id, value)}
+            value={(() => {
+              const current = answers[question.id];
+              if (current && typeof current === 'object' && !Array.isArray(current)) {
+                return (current.opcao as string) || '';
+              }
+              return (current as string) || '';
+            })()}
+            onValueChange={(value) => handleOptionChange(question, value)}
             className="space-y-3"
           >
             {question.options?.map((option) => (
@@ -160,11 +248,17 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
                 key={option}
                 className={cn(
                   'flex items-center space-x-3 p-4 rounded-xl border-2 transition-all cursor-pointer',
-                  answers[question.id] === option
+                  (() => {
+                    const current = answers[question.id];
+                    if (current && typeof current === 'object' && !Array.isArray(current)) {
+                      return current.opcao === option;
+                    }
+                    return current === option;
+                  })()
                     ? 'border-lema-primary bg-accent'
                     : 'border-border hover:border-lema-primary/50'
                 )}
-                onClick={() => handleAnswer(question.id, option)}
+                onClick={() => handleOptionChange(question, option)}
               >
                 <RadioGroupItem value={option} id={option} />
                 <Label htmlFor={option} className="flex-1 cursor-pointer text-base">
@@ -172,6 +266,7 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
                 </Label>
               </div>
             ))}
+            {renderOtherField(question)}
           </RadioGroup>
         );
       
@@ -179,7 +274,12 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
         return (
           <div className="space-y-3">
             {question.options?.map((option) => {
-              const isChecked = ((answers[question.id] as string[]) || []).includes(option);
+              const current = answers[question.id];
+              const selected =
+                current && typeof current === 'object' && !Array.isArray(current)
+                  ? (current.opcao as string[]) || []
+                  : (current as string[]) || [];
+              const isChecked = selected.includes(option);
               return (
                 <div
                   key={option}
@@ -189,33 +289,48 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
                       ? 'border-lema-primary bg-accent'
                       : 'border-border hover:border-lema-primary/50'
                   )}
-                  onClick={() => handleCheckboxChange(question.id, option, !isChecked)}
+                  onClick={() => {
+                    const next = isChecked
+                      ? selected.filter(o => o !== option)
+                      : [...selected, option];
+                    handleOptionChange(question, next);
+                  }}
                 >
                   <Checkbox checked={isChecked} />
                   <Label className="flex-1 cursor-pointer text-base">{option}</Label>
                 </div>
               );
             })}
+            {renderOtherField(question)}
           </div>
         );
       
       case 'select':
         return (
-          <Select
-            value={(answers[question.id] as string) || ''}
-            onValueChange={(value) => handleAnswer(question.id, value)}
-          >
-            <SelectTrigger className="h-14 text-lg">
-              <SelectValue placeholder="Selecione uma opção..." />
-            </SelectTrigger>
-            <SelectContent>
-              {question.options?.map((option) => (
-                <SelectItem key={option} value={option} className="text-base py-3">
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div>
+            <Select
+              value={(() => {
+                const current = answers[question.id];
+                if (current && typeof current === 'object' && !Array.isArray(current)) {
+                  return (current.opcao as string) || '';
+                }
+                return (current as string) || '';
+              })()}
+              onValueChange={(value) => handleOptionChange(question, value)}
+            >
+              <SelectTrigger className="h-14 text-lg">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {question.options?.map((option) => (
+                  <SelectItem key={option} value={option} className="text-base py-3">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {renderOtherField(question)}
+          </div>
         );
       
       default:
@@ -297,6 +412,16 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
           // Question Screen
           <div className="space-y-6 py-4">
             <div>
+              {survey.perguntas[currentStep - 1].blockTitle && (
+                <div className="mb-3 rounded-xl border bg-accent/40 p-3">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Secao
+                  </p>
+                  <p className="font-semibold">
+                    {survey.perguntas[currentStep - 1].blockTitle}
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-medium text-lema-primary">
                   Pergunta {currentStep}

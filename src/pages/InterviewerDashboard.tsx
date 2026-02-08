@@ -25,6 +25,12 @@ interface UnlockedSurvey {
   id: string;
   titulo: string;
   descricao: string | null;
+  blocos?: {
+    id: string;
+    titulo: string;
+    descricao?: string | null;
+    ordem: number;
+  }[];
   perguntas: any[];
 }
 
@@ -65,19 +71,31 @@ export default function InterviewerDashboard() {
       return;
     }
 
-    // Fetch questions for this survey
+    // Fetch blocks and questions for this survey
     setIsLoadingSurvey(true);
     try {
-      const { data: perguntas, error } = await supabase
-        .from('perguntas')
-        .select('*')
-        .eq('pesquisa_id', survey.id)
-        .order('ordem', { ascending: true });
+      const [blocksResult, questionsResult] = await Promise.all([
+        supabase
+          .from('blocos_perguntas')
+          .select('id, titulo, descricao, ordem')
+          .eq('pesquisa_id', survey.id)
+          .order('ordem', { ascending: true }),
+        supabase
+          .from('perguntas')
+          .select('*')
+          .eq('pesquisa_id', survey.id)
+          .order('ordem', { ascending: true })
+      ]);
 
-      if (error) throw error;
+      if (blocksResult.error) throw blocksResult.error;
+      if (questionsResult.error) throw questionsResult.error;
+
+      const blocos = blocksResult.data || [];
+      const perguntas = questionsResult.data || [];
 
       const fullSurvey: UnlockedSurvey = {
         ...survey,
+        blocos,
         perguntas: perguntas || []
       };
 
@@ -114,12 +132,20 @@ export default function InterviewerDashboard() {
           descricao: selectedSurvey.descricao || '',
           ativa: true,
           createdAt: new Date().toISOString(),
+          blocos: selectedSurvey.blocos,
           perguntas: selectedSurvey.perguntas.map(p => ({
             id: p.id,
             text: p.texto,
             type: p.tipo as 'text' | 'radio' | 'checkbox' | 'select',
+            promptType: (p.tipo_pergunta || 'estimulada') as 'espontanea' | 'estimulada' | 'mista',
             required: p.obrigatoria,
-            options: p.opcoes || []
+            options: p.opcoes || [],
+            suggestedOptions: p.opcoes_sugeridas || [],
+            allowOther: p.permite_outro || false,
+            blockId: p.bloco_id || null,
+            blockTitle: p.bloco_id
+              ? (selectedSurvey.blocos || []).find(b => b.id === p.bloco_id)?.titulo || null
+              : null
           }))
         }}
         onComplete={handleSurveyComplete}

@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { Key, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
+import { CheckCircle, Key, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 interface SurveyCodeInputProps {
@@ -84,7 +84,6 @@ export function SurveyCodeInput({ onSurveyUnlocked }: SurveyCodeInputProps) {
             type="text"
             value={code}
             onChange={(e) => handleCodeChange(e.target.value)}
-            placeholder="ABC123"
             className="h-14 text-center text-2xl tracking-[0.3em] font-mono uppercase"
             maxLength={6}
           />

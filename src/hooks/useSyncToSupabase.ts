@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { SurveyResponse, SyncStatus } from '@/types/survey';
+import { AnswerValue, SurveyResponse, SyncStatus } from '@/types/survey';
 import { toast } from 'sonner';
 
 const PENDING_KEY = 'lema_pending_responses';
@@ -186,7 +186,7 @@ export function useSyncToSupabase() {
           pesquisas (
             titulo
           ),
-          profiles:entrevistador_id (
+          profiles:profiles!respostas_entrevistador_profile_fkey (
             nome
           )
         `)
@@ -200,7 +200,7 @@ export function useSyncToSupabase() {
         surveyTitulo: (r.pesquisas as any)?.titulo || 'Pesquisa Desconhecida',
         entrevistadorId: r.entrevistador_id,
         entrevistadorNome: (r.profiles as any)?.nome || 'Desconhecido',
-        respostas: r.respostas as Record<string, string | string[]>,
+        respostas: r.respostas as Record<string, AnswerValue>,
         audioBlob: r.audio_url || undefined,
         gps: r.latitude && r.longitude ? {
           latitude: r.latitude,

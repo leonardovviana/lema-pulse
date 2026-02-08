@@ -1,21 +1,43 @@
 export type QuestionType = 'text' | 'radio' | 'checkbox' | 'select';
+export type PromptType = 'espontanea' | 'estimulada' | 'mista';
 
 export interface Question {
   id: string;
   text: string;
   type: QuestionType;
+  promptType: PromptType;
   options?: string[];
+  suggestedOptions?: string[];
+  allowOther?: boolean;
   required?: boolean;
+  blockId?: string | null;
+  blockTitle?: string | null;
+}
+
+export interface SurveyBlock {
+  id: string;
+  titulo: string;
+  descricao?: string | null;
+  ordem: number;
 }
 
 export interface Survey {
   id: string;
   titulo: string;
   descricao: string;
+  blocos?: SurveyBlock[];
   perguntas: Question[];
   ativa: boolean;
   createdAt: string;
 }
+
+export type AnswerValue =
+  | string
+  | string[]
+  | {
+      opcao?: string | string[];
+      outro?: string;
+    };
 
 export interface SurveyResponse {
   id: string;
@@ -23,7 +45,7 @@ export interface SurveyResponse {
   surveyTitulo: string;
   entrevistadorId: string;
   entrevistadorNome: string;
-  respostas: Record<string, string | string[]>;
+  respostas: Record<string, AnswerValue>;
   audioBlob?: string; // Base64 encoded
   gps: {
     latitude: number;

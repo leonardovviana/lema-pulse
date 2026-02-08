@@ -8,7 +8,6 @@ import { Loader2, ArrowRight } from 'lucide-react';
 const Index = () => {
   const navigate = useNavigate();
   const { isAuthenticated, role, isLoading } = useSupabaseAuthContext();
-
   useEffect(() => {
     if (isAuthenticated && role) {
       // Redirect based on role
@@ -71,7 +70,7 @@ const Index = () => {
         </div>
 
         <p className="text-sm text-muted-foreground pt-4">
-          © 2024 Lema Pesquisas. Todos os direitos reservados.
+          © 2026 Lema Pesquisas. Todos os direitos reservados.
         </p>
       </div>
     </div>
