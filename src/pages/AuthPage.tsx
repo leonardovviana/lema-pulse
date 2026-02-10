@@ -50,7 +50,7 @@ export default function AuthPage() {
         const dummyEmail = `${accessCode}@lema.pulse`;
         await signIn(dummyEmail, accessCode);
         toast.success('Login realizado com sucesso!');
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast.error('Código inválido', {
           description: 'Verifique o código e tente novamente.'
         });
@@ -71,9 +71,9 @@ export default function AuthPage() {
       await signIn(email, password);
       toast.success('Login realizado com sucesso!');
       // Navigation will be handled by the auth state change
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Erro no login', {
-        description: error.message || 'Verifique suas credenciais'
+        description: error instanceof Error ? error.message : 'Verifique suas credenciais'
       });
     } finally {
       setIsLoading(false);
@@ -106,9 +106,9 @@ export default function AuthPage() {
       });
       setAuthMode('login');
       resetForm();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Erro no cadastro', {
-        description: error.message || 'Tente novamente'
+        description: error instanceof Error ? error.message : 'Tente novamente'
       });
     } finally {
       setIsLoading(false);

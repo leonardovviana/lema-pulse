@@ -56,9 +56,8 @@ export function useSync() {
     if (navigator.onLine) {
       syncNow();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getPendingResponses, savePendingResponses]);
-
-  // Simulate backend sync
   const syncToBackend = useCallback(async (responses: SurveyResponse[]): Promise<boolean> => {
     // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 1500));

@@ -53,7 +53,7 @@ serve(async (req) => {
       )
     }
 
-    const { name, code } = await req.json()
+    const { name, code, equipe } = await req.json()
 
     if (!code || code.length < 6) {
       return new Response(
@@ -94,7 +94,12 @@ serve(async (req) => {
       // Upsert profile (in case trigger already created it)
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
-        .upsert({ user_id: newUserId, nome: name.trim() }, { onConflict: 'user_id' })
+        .upsert({
+          user_id: newUserId,
+          nome: name.trim(),
+          codigo_acesso: code,
+          equipe: equipe?.trim() || null,
+        }, { onConflict: 'user_id' })
 
       if (profileError) {
         console.error('Profile error:', profileError)

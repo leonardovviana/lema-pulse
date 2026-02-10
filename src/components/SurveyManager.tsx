@@ -183,7 +183,7 @@ export function SurveyManager() {
       setSelectedSurveyId(data.id);
       setActiveSurveyTab('questionario');
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error('Erro ao criar pesquisa', {
         description: error.message
       });
@@ -233,16 +233,16 @@ export function SurveyManager() {
     if (!selectedSurvey) return;
 
     const loadedBlocks = (selectedSurvey.blocos_perguntas || [])
-      .sort((a: any, b: any) => a.ordem - b.ordem)
-      .map((b: any) => ({
+      .sort((a: { ordem: number }, b: { ordem: number }) => a.ordem - b.ordem)
+      .map((b: { id: string; titulo: string; descricao?: string | null }) => ({
         id: b.id,
         titulo: b.titulo,
         descricao: b.descricao || ''
       }));
 
     const loadedQuestions = (selectedSurvey.perguntas || [])
-      .sort((a: any, b: any) => a.ordem - b.ordem)
-      .map((q: any) => ({
+      .sort((a: { ordem: number }, b: { ordem: number }) => a.ordem - b.ordem)
+      .map((q: { id: string; texto: string; tipo_pergunta?: string | null; tipo?: string | null; opcoes?: string[] | null; opcoes_sugeridas?: string[] | null; obrigatoria?: boolean; permite_outro?: boolean; bloco_id?: string | null }) => ({
         id: q.id,
         text: q.texto,
         promptType: (q.tipo_pergunta || 'estimulada') as PromptType,
@@ -335,7 +335,7 @@ export function SurveyManager() {
       queryClient.invalidateQueries({ queryKey: ['survey-details', selectedSurveyId] });
       queryClient.invalidateQueries({ queryKey: ['surveys'] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error('Erro ao salvar questionario', {
         description: error.message
       });
@@ -358,7 +358,7 @@ export function SurveyManager() {
       toast.success('Pesquisa excluída');
       setSelectedSurveyId(null);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error('Erro ao excluir pesquisa', {
         description: error.message
       });

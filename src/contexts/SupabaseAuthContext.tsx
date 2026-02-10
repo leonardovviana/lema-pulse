@@ -11,8 +11,8 @@ interface SupabaseAuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isEntrevistador: boolean;
-  signUp: (email: string, password: string, nome: string) => Promise<any>;
-  signIn: (email: string, password: string) => Promise<any>;
+  signUp: (email: string, password: string, nome: string) => Promise<{ user: User | null; session: Session | null }>;
+  signIn: (email: string, password: string) => Promise<{ user: User | null; session: Session | null }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: { nome?: string; avatar_url?: string }) => Promise<void>;
 }

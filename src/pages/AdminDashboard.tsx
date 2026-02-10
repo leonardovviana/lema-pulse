@@ -1,38 +1,42 @@
-import { AIAnalyst } from '@/components/AIAnalyst';
-import { BarChartCard, PieChartCard } from '@/components/Charts';
-import { DataGrid } from '@/components/DataGrid';
-import { InterviewerManager } from '@/components/InterviewerManager';
 import { Logo } from '@/components/Logo';
 import { MetricCard } from '@/components/MetricCard';
-import { SurveyManager } from '@/components/SurveyManager';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
 import { useAdminStats, useResponses } from '@/hooks/useResponses';
-import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
 import {
-    Bot,
-    Calendar,
-    ClipboardList,
-    LayoutDashboard,
-    LogOut,
-    RefreshCw,
-    Table2,
-    Target,
-    TrendingUp,
-    Users
+  BarChart3,
+  Bot,
+  Calendar,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  Pencil,
+  RefreshCw,
+  Target,
+  TrendingUp,
+  Users
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+// Lazy-load heavy tab components — only loaded when user clicks its tab
+const BarChartCard = lazy(() => import('@/components/Charts').then(m => ({ default: m.BarChartCard })));
+const PieChartCard = lazy(() => import('@/components/Charts').then(m => ({ default: m.PieChartCard })));
+const SurveyManager = lazy(() => import('@/components/SurveyManager').then(m => ({ default: m.SurveyManager })));
+const InterviewerManager = lazy(() => import('@/components/InterviewerManager').then(m => ({ default: m.InterviewerManager })));
+const AIAnalyst = lazy(() => import('@/components/AIAnalyst').then(m => ({ default: m.AIAnalyst })));
+const SurveyResults = lazy(() => import('@/components/SurveyResults').then(m => ({ default: m.SurveyResults })));
+
+const TabFallback = () => <Skeleton className="h-64 w-full rounded-xl" />;
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -40,39 +44,19 @@ export default function AdminDashboard() {
   const { data: responses, isLoading: responsesLoading, refetch } = useResponses();
   const { data: stats, isLoading: statsLoading } = useAdminStats();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [dataFilterSurveyId, setDataFilterSurveyId] = useState<string>('all');
-
-  // Fetch surveys list for filter dropdown
-  const { data: surveysList } = useQuery({
-    queryKey: ['admin-surveys-list'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('pesquisas')
-        .select('id, titulo')
-        .order('titulo', { ascending: true });
-      if (error) throw error;
-      return data;
-    }
-  });
 
   const handleLogout = async () => {
     await signOut();
     navigate('/');
   };
 
-  const allResponses = responses || [];
-
-  // Filtered responses for Dados tab
-  const dataFilteredResponses = useMemo(() => {
-    if (dataFilterSurveyId === 'all') return allResponses;
-    return allResponses.filter(r => r.surveyId === dataFilterSurveyId);
-  }, [allResponses, dataFilterSurveyId]);
+  const allResponses = useMemo(() => responses || [], [responses]);
 
   // Calculate metrics from stats or responses
   const totalColetas = stats?.totalResponses || allResponses.length;
   const uniqueInterviewers = stats?.activeInterviewers || 0;
   const todayCount = stats?.todayResponses || 0;
-  const dailyTarget = 20;
+  const [dailyTarget, setDailyTarget] = useState(20);
 
   // Aggregate response distribution by survey title
   const distributionData = useMemo(() => {
@@ -110,7 +94,7 @@ export default function AdminDashboard() {
     { id: 'surveys', label: 'Pesquisas', icon: ClipboardList },
     { id: 'interviewers', label: 'Entrevistadores', icon: Users },
     { id: 'ai', label: 'IA Analista', icon: Bot },
-    { id: 'data', label: 'Coletas', icon: Table2 },
+    { id: 'results', label: 'Resultados', icon: BarChart3 },
   ];
 
   return (
@@ -238,13 +222,35 @@ export default function AdminDashboard() {
                   subtitle="Usuários com coletas hoje"
                   icon={Users}
                 />
-                <MetricCard
-                  title="Meta do Dia"
-                  value={`${todayCount}/${dailyTarget}`}
-                  subtitle={`${Math.round((todayCount / dailyTarget) * 100)}% concluído`}
-                  icon={Target}
-                  variant="secondary"
-                />
+                <div className="card-elevated p-4 relative">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Target className="w-4 h-4" />
+                      <span className="text-sm font-medium">Meta do Dia</span>
+                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56" align="end">
+                        <div className="space-y-2">
+                          <Label className="text-sm">Meta diaria</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={dailyTarget}
+                            onChange={(e) => setDailyTarget(Math.max(1, Number(e.target.value)))}
+                          />
+                          <p className="text-xs text-muted-foreground">Coletas esperadas por dia</p>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <p className="text-2xl font-bold">{todayCount}/{dailyTarget}</p>
+                  <p className="text-sm text-muted-foreground">{Math.round((todayCount / dailyTarget) * 100)}% concluido</p>
+                </div>
                 <MetricCard
                   title="Pesquisas Ativas"
                   value={stats?.activeSurveys || 0}
@@ -255,16 +261,18 @@ export default function AdminDashboard() {
             )}
 
             {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <PieChartCard
-                title="Distribuição de coletas por pesquisa"
-                data={distributionData}
-              />
-              <BarChartCard
-                title="Produtividade Diária"
-                data={dailyStatsData}
-              />
-            </div>
+            <Suspense fallback={<TabFallback />}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <PieChartCard
+                  title="Distribuição de coletas por pesquisa"
+                  data={distributionData}
+                />
+                <BarChartCard
+                  title="Produtividade Diária"
+                  data={dailyStatsData}
+                />
+              </div>
+            </Suspense>
 
             {/* Recent Activity */}
             <div className="card-elevated p-6">
@@ -325,13 +333,13 @@ export default function AdminDashboard() {
               <h1 className="text-2xl font-bold">Gerenciar Pesquisas</h1>
               <p className="text-muted-foreground">Crie e gerencie pesquisas com códigos de liberação</p>
             </div>
-            <SurveyManager />
+            <Suspense fallback={<TabFallback />}><SurveyManager /></Suspense>
           </div>
         )}
 
         {activeTab === 'interviewers' && (
           <div className="space-y-6 animate-fade-in">
-            <InterviewerManager />
+            <Suspense fallback={<TabFallback />}><InterviewerManager /></Suspense>
           </div>
         )}
 
@@ -341,40 +349,13 @@ export default function AdminDashboard() {
               <h1 className="text-2xl font-bold">IA Analista</h1>
               <p className="text-muted-foreground">Faça perguntas sobre os dados coletados</p>
             </div>
-            <AIAnalyst responses={allResponses} />
+            <Suspense fallback={<TabFallback />}><AIAnalyst responses={allResponses} /></Suspense>
           </div>
         )}
 
-        {activeTab === 'data' && (
+        {activeTab === 'results' && (
           <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <h1 className="text-2xl font-bold">Dados das Coletas</h1>
-                <p className="text-muted-foreground">Visualize e exporte as coletas realizadas</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Select value={dataFilterSurveyId} onValueChange={setDataFilterSurveyId}>
-                  <SelectTrigger className="w-[220px]">
-                    <SelectValue placeholder="Filtrar por pesquisa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as pesquisas</SelectItem>
-                    {surveysList?.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.titulo}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="sm" onClick={() => refetch()}>
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Atualizar
-                </Button>
-              </div>
-            </div>
-            {responsesLoading ? (
-              <Skeleton className="h-96 w-full rounded-xl" />
-            ) : (
-              <DataGrid responses={dataFilteredResponses} />
-            )}
+            <Suspense fallback={<TabFallback />}><SurveyResults /></Suspense>
           </div>
         )}
       </main>

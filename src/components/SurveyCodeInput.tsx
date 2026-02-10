@@ -54,10 +54,10 @@ export function SurveyCodeInput({ onSurveyUnlocked }: SurveyCodeInputProps) {
         description: data.titulo
       });
       onSurveyUnlocked(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error validating code:', error);
       toast.error('Erro ao validar código', {
-        description: error.message
+        description: error instanceof Error ? error.message : 'Tente novamente.',
       });
     } finally {
       setIsLoading(false);

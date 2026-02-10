@@ -57,6 +57,7 @@ export function useSyncToSupabase() {
     if (navigator.onLine) {
       syncNow();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getPendingResponses, savePendingResponses]);
 
   // Sync to Supabase
@@ -129,10 +130,10 @@ export function useSyncToSupabase() {
       toast.success('Sincronização concluída!', {
         description: `${pending.length} pesquisa(s) enviada(s) com sucesso.`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setSyncStatus(prev => ({ ...prev, isSyncing: false }));
       toast.error('Erro na sincronização', {
-        description: error.message || 'Tente novamente em alguns instantes.',
+        description: error instanceof Error ? error.message : 'Tente novamente em alguns instantes.',
       });
     }
   }, [getPendingResponses, getSyncedResponses, savePendingResponses, syncToSupabase]);
@@ -197,9 +198,9 @@ export function useSyncToSupabase() {
       const syncedResponses: SurveyResponse[] = (data || []).map(r => ({
         id: r.id,
         surveyId: r.pesquisa_id,
-        surveyTitulo: (r.pesquisas as any)?.titulo || 'Pesquisa Desconhecida',
+        surveyTitulo: (r.pesquisas as { titulo?: string } | null)?.titulo || 'Pesquisa Desconhecida',
         entrevistadorId: r.entrevistador_id,
-        entrevistadorNome: (r.profiles as any)?.nome || 'Desconhecido',
+        entrevistadorNome: (r.profiles as { nome?: string } | null)?.nome || 'Desconhecido',
         respostas: r.respostas as Record<string, AnswerValue>,
         audioBlob: r.audio_url || undefined,
         gps: r.latitude && r.longitude ? {

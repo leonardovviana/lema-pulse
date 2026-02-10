@@ -31,7 +31,15 @@ interface UnlockedSurvey {
     descricao?: string | null;
     ordem: number;
   }[];
-  perguntas: any[];
+  perguntas: {
+    id: string;
+    text: string;
+    type: string;
+    options?: string[];
+    required?: boolean;
+    ordem?: number;
+    [key: string]: unknown;
+  }[];
 }
 
 const UNLOCKED_SURVEYS_KEY = 'lema_unlocked_surveys';

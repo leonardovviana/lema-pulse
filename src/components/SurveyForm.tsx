@@ -127,14 +127,17 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
     setIsSubmitting(true);
     
     try {
-      // Stop recording
+      // Stop recording and wait for the blob to be finalized
       stopRecording();
       
-      // Wait a bit for recording to finalize
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Get audio as base64
-      const audioBase64 = await getBase64Audio();
+      // Wait for onstop event to fire and update state with audioBlob
+      // Poll for up to 3 seconds
+      let audioBase64: string | null = null;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        audioBase64 = await getBase64Audio();
+        if (audioBase64) break;
+      }
 
       // Create response object
       const response: SurveyResponse = {
@@ -153,8 +156,10 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
       // Add to sync queue
       addResponse(response);
 
-      toast.success('Pesquisa concluída!', {
-        description: 'Os dados foram salvos com sucesso.',
+      toast.success('Pesquisa concluida!', {
+        description: audioBase64
+          ? 'Dados e audio salvos com sucesso.'
+          : 'Dados salvos (audio nao capturado).',
       });
 
       onComplete();

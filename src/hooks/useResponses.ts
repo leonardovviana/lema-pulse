@@ -33,9 +33,9 @@ export function useResponses() {
       return (data || []).map(r => ({
         id: r.id,
         surveyId: r.pesquisa_id,
-        surveyTitulo: (r.pesquisas as any)?.titulo || 'Pesquisa Desconhecida',
+        surveyTitulo: (r.pesquisas as { titulo?: string } | null)?.titulo || 'Pesquisa Desconhecida',
         entrevistadorId: r.entrevistador_id,
-        entrevistadorNome: (r.profiles as any)?.nome || 'Desconhecido',
+        entrevistadorNome: (r.profiles as { nome?: string } | null)?.nome || 'Desconhecido',
         respostas: r.respostas as Record<string, AnswerValue>,
         audioBlob: r.audio_url || undefined,
         gps: r.latitude && r.longitude ? {
@@ -80,7 +80,7 @@ export function useMyResponses() {
       return (data || []).map(r => ({
         id: r.id,
         surveyId: r.pesquisa_id,
-        surveyTitulo: (r.pesquisas as any)?.titulo || 'Pesquisa Desconhecida',
+        surveyTitulo: (r.pesquisas as { titulo?: string } | null)?.titulo || 'Pesquisa Desconhecida',
         entrevistadorId: r.entrevistador_id,
         entrevistadorNome: '',
         respostas: r.respostas as Record<string, AnswerValue>,

@@ -5,13 +5,25 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { SupabaseAuthProvider, useSupabaseAuthContext } from "@/contexts/SupabaseAuthContext";
 import { Loader2 } from "lucide-react";
-import Index from "./pages/Index";
-import AuthPage from "./pages/AuthPage";
-import InterviewerDashboard from "./pages/InterviewerDashboard";
-import AdminDashboard from "./pages/AdminDashboard";
-import NotFound from "./pages/NotFound";
+import { lazy, Suspense } from "react";
 
-const queryClient = new QueryClient();
+// Lazy-load pages — each gets its own JS chunk
+const Index = lazy(() => import("./pages/Index"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const InterviewerDashboard = lazy(() => import("./pages/InterviewerDashboard"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60_000,       // 5 min fresh — reduces refetches
+      gcTime: 30 * 60_000,         // 30 min garbage collection
+      refetchOnWindowFocus: false,  // no background refetch on tab switch
+      retry: 2,
+    },
+  },
+});
 
 // Loading component
 function LoadingScreen() {
@@ -74,9 +86,10 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<Index />} />
-      <Route 
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route 
         path="/auth" 
         element={
           <AuthRoute>
@@ -102,7 +115,8 @@ function AppRoutes() {
       />
       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
       <Route path="*" element={<NotFound />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

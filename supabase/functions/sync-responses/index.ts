@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,15 +37,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Create client with user's token for RLS
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
+    // Admin client (service role) — bypasses RLS for storage and inserts
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
+    // Verify user via token
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !user) {
       return new Response(
@@ -70,7 +67,7 @@ Deno.serve(async (req) => {
     for (const response of responses) {
       try {
         // Check if already synced (idempotency via client_id)
-        const { data: existing } = await supabaseClient
+        const { data: existing } = await supabaseAdmin
           .from('respostas')
           .select('id')
           .eq('client_id', response.clientId)
@@ -85,26 +82,35 @@ Deno.serve(async (req) => {
 
         // Upload audio if provided
         if (response.audioBase64) {
-          const audioBuffer = Uint8Array.from(atob(response.audioBase64), c => c.charCodeAt(0));
-          const audioPath = `${user.id}/${response.clientId}.webm`;
-          
-          const { error: uploadError } = await supabaseClient.storage
-            .from('audio-recordings')
-            .upload(audioPath, audioBuffer, {
-              contentType: 'audio/webm',
-              upsert: true
-            });
+          try {
+            const audioBuffer = Uint8Array.from(atob(response.audioBase64), c => c.charCodeAt(0));
+            const audioPath = `${user.id}/${response.clientId}.webm`;
+            
+            console.log(`Uploading audio: ${audioPath} (${audioBuffer.length} bytes)`);
 
-          if (!uploadError) {
-            const { data: urlData } = supabaseClient.storage
+            const { error: uploadError } = await supabaseAdmin.storage
               .from('audio-recordings')
-              .getPublicUrl(audioPath);
-            audioUrl = urlData.publicUrl;
+              .upload(audioPath, audioBuffer, {
+                contentType: 'audio/webm',
+                upsert: true
+              });
+
+            if (uploadError) {
+              console.error('Audio upload error:', JSON.stringify(uploadError));
+            } else {
+              const { data: urlData } = supabaseAdmin.storage
+                .from('audio-recordings')
+                .getPublicUrl(audioPath);
+              audioUrl = urlData.publicUrl;
+              console.log('Audio uploaded successfully:', audioUrl);
+            }
+          } catch (audioErr) {
+            console.error('Audio processing error:', audioErr);
           }
         }
 
         // Insert response
-        const { data: inserted, error: insertError } = await supabaseClient
+        const { data: inserted, error: insertError } = await supabaseAdmin
           .from('respostas')
           .insert({
             pesquisa_id: response.surveyId,
@@ -126,7 +132,7 @@ Deno.serve(async (req) => {
 
         // Update daily stats
         const today = new Date().toISOString().split('T')[0];
-        await supabaseClient.rpc('increment_daily_completed', {
+        await supabaseAdmin.rpc('increment_daily_completed', {
           p_entrevistador_id: user.id,
           p_data: today
         }).catch(() => {

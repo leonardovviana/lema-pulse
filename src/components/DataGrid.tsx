@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Play, Pause, MapPin, Calendar, User, Download, FileSpreadsheet, FileText } from 'lucide-react';
-import { SurveyResponse } from '@/types/survey';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
+import { SurveyResponse } from '@/types/survey';
+import { Calendar, FileSpreadsheet, FileText, MapPin, Pause, Play, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 interface DataGridProps {
@@ -12,6 +13,16 @@ interface DataGridProps {
 
 export function DataGrid({ responses }: DataGridProps) {
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString('pt-BR', {
@@ -23,20 +34,42 @@ export function DataGrid({ responses }: DataGridProps) {
     });
   };
 
-  const handlePlay = (id: string, audioBlob?: string) => {
-    if (!audioBlob) {
+  const handlePlay = async (id: string, audioUrl?: string) => {
+    if (!audioUrl) {
       toast.info('Áudio não disponível para esta coleta');
       return;
     }
 
     if (playingId === id) {
+      audioRef.current?.pause();
       setPlayingId(null);
-      // Would pause audio here
-    } else {
+      return;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    try {
+      let playUrl = audioUrl;
+      const pathMatch = audioUrl.match(/audio-recordings\/(.+?)(\?|$)/);
+      if (pathMatch) {
+        const { data } = await supabase.storage
+          .from('audio-recordings')
+          .createSignedUrl(decodeURIComponent(pathMatch[1]), 3600);
+        if (data?.signedUrl) playUrl = data.signedUrl;
+      }
+
+      const audio = new Audio(playUrl);
+      audioRef.current = audio;
+      audio.onended = () => { setPlayingId(null); audioRef.current = null; };
+      audio.onerror = () => { toast.error('Erro ao reproduzir áudio'); setPlayingId(null); audioRef.current = null; };
+      await audio.play();
       setPlayingId(id);
-      // Would play audio here
-      toast.success('Reproduzindo áudio da coleta');
-      setTimeout(() => setPlayingId(null), 3000);
+    } catch {
+      toast.error('Erro ao reproduzir áudio');
+      setPlayingId(null);
     }
   };
 
@@ -46,7 +79,6 @@ export function DataGrid({ responses }: DataGridProps) {
   };
 
   const exportToExcel = () => {
-    // Create CSV content
     const headers = ['ID', 'Pesquisa', 'Entrevistador', 'Data', 'Localização', 'Status'];
     const rows = responses.map(r => [
       r.id,
@@ -56,79 +88,27 @@ export function DataGrid({ responses }: DataGridProps) {
       r.gps ? `${r.gps.latitude.toFixed(4)}, ${r.gps.longitude.toFixed(4)}` : 'N/A',
       r.synced ? 'Sincronizado' : 'Pendente',
     ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `lema_coletas_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-
-    toast.success('Exportação concluída!', {
-      description: 'Arquivo Excel gerado com sucesso.',
-    });
+    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    downloadBlob(csv, 'text/csv;charset=utf-8;', 'csv');
   };
 
   const exportToWord = () => {
-    // Create HTML content for Word
-    const htmlContent = `
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; }
-            h1 { color: #90205D; }
-            table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #90205D; color: white; }
-            tr:nth-child(even) { background-color: #f9f9f9; }
-          </style>
-        </head>
-        <body>
-          <h1>Relatório de Coletas</h1>
-          <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-          <p>Total de coletas: ${responses.length}</p>
-          <table>
-            <tr>
-              <th>ID</th>
-              <th>Pesquisa</th>
-              <th>Entrevistador</th>
-              <th>Data</th>
-              <th>Localização</th>
-              <th>Status</th>
-            </tr>
-            ${responses.map(r => `
-              <tr>
-                <td>${r.id}</td>
-                <td>${r.surveyTitulo}</td>
-                <td>${r.entrevistadorNome}</td>
-                <td>${formatDate(r.timestamp)}</td>
-                <td>${r.gps ? `${r.gps.latitude.toFixed(4)}, ${r.gps.longitude.toFixed(4)}` : 'N/A'}</td>
-                <td>${r.synced ? 'Sincronizado' : 'Pendente'}</td>
-              </tr>
-            `).join('')}
-          </table>
-        </body>
-      </html>
-    `;
+    const tableRows = responses.map(r =>
+      `<tr><td>${r.id}</td><td>${r.surveyTitulo}</td><td>${r.entrevistadorNome}</td><td>${formatDate(r.timestamp)}</td><td>${r.gps ? `${r.gps.latitude.toFixed(4)}, ${r.gps.longitude.toFixed(4)}` : 'N/A'}</td><td>${r.synced ? 'Sincronizado' : 'Pendente'}</td></tr>`
+    ).join('');
+    const html = `<html><head><meta charset="utf-8"><style>body{font-family:Arial}h1{color:#90205D}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#90205D;color:#fff}tr:nth-child(even){background:#f9f9f9}</style></head><body><h1>Relatório de Coletas</h1><p>Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${responses.length}</p><table><tr><th>ID</th><th>Pesquisa</th><th>Entrevistador</th><th>Data</th><th>Localização</th><th>Status</th></tr>${tableRows}</table></body></html>`;
+    downloadBlob(html, 'application/msword', 'doc');
+  };
 
-    const blob = new Blob([htmlContent], { type: 'application/msword' });
+  const downloadBlob = (content: string, type: string, ext: string) => {
+    const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `lema_coletas_${new Date().toISOString().split('T')[0]}.doc`;
-    link.click();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lema_coletas_${new Date().toISOString().split('T')[0]}.${ext}`;
+    a.click();
     URL.revokeObjectURL(url);
-
-    toast.success('Exportação concluída!', {
-      description: 'Arquivo Word gerado com sucesso.',
-    });
+    toast.success('Exportação concluída!');
   };
 
   return (
