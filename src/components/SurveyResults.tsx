@@ -1,5 +1,12 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog, DialogContent, DialogDescription,
+    DialogFooter,
+    DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -10,8 +17,8 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { AnswerValue } from '@/types/survey';
-import { useQuery } from '@tanstack/react-query';
-import { BarChart3, ChevronDown, Download, FileText, Shuffle } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { BarChart3, ChevronDown, Download, FileText, Merge, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
     Bar,
@@ -40,11 +47,13 @@ interface QuestionData {
   tipo_pergunta: string | null;
   opcoes: string[] | null;
   ordem: number;
+  versao?: number;
 }
 
 interface SurveyOption {
   id: string;
   titulo: string;
+  versao: number;
   perguntas: QuestionData[];
 }
 
@@ -54,6 +63,7 @@ interface ResponseRow {
   entrevistador_id: string;
   respostas: Record<string, AnswerValue>;
   created_at: string;
+  pesquisa_versao: number;
   profiles: { nome: string; equipe: string | null } | null;
 }
 
@@ -65,15 +75,20 @@ interface QuestionAnalysis {
 }
 
 // ── Helpers ────────────────────────────────────────────
+/** Normaliza valor: trim + colapsar espaços internos múltiplos */
+function normalizeValue(v: string): string {
+  return v.trim().replace(/\s+/g, ' ');
+}
+
 function extractValues(val: AnswerValue | undefined): string[] {
   if (!val) return [];
-  if (typeof val === 'string') return val.trim() ? [val.trim()] : [];
-  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string') { const n = normalizeValue(val); return n ? [n] : []; }
+  if (Array.isArray(val)) return val.map(normalizeValue).filter(Boolean);
   if (typeof val === 'object') {
     const results: string[] = [];
-    if (typeof val.opcao === 'string' && val.opcao) results.push(val.opcao);
-    else if (Array.isArray(val.opcao)) results.push(...val.opcao.filter(Boolean));
-    if (val.outro?.trim()) results.push(val.outro.trim());
+    if (typeof val.opcao === 'string' && val.opcao) results.push(normalizeValue(val.opcao));
+    else if (Array.isArray(val.opcao)) results.push(...val.opcao.map(normalizeValue).filter(Boolean));
+    if (val.outro?.trim()) results.push(normalizeValue(val.outro));
     return results;
   }
   return [];
@@ -86,10 +101,18 @@ function extractSingleValue(val: AnswerValue | undefined): string | null {
 
 // ── Main component ─────────────────────────────────────
 export function SurveyResults() {
+  const queryClient = useQueryClient();
   const [selectedSurvey, setSelectedSurvey] = useState('');
+  const [selectedVersion, setSelectedVersion] = useState<string>('all');
   const [subTab, setSubTab] = useState<'analysis' | 'cross'>('analysis');
   const [crossRowQ, setCrossRowQ] = useState('');
   const [crossColQ, setCrossColQ] = useState('');
+
+  // Merge state
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeQuestionId, setMergeQuestionId] = useState('');
+  const [mergeSelectedValues, setMergeSelectedValues] = useState<string[]>([]);
+  const [mergeTargetValue, setMergeTargetValue] = useState('');
 
   // Fetch all surveys (including inactive)
   const { data: surveys, isLoading: surveysLoading } = useQuery({
@@ -97,15 +120,17 @@ export function SurveyResults() {
     queryFn: async (): Promise<SurveyOption[]> => {
       const { data, error } = await supabase
         .from('pesquisas')
-        .select('id, titulo, perguntas(id, texto, tipo, tipo_pergunta, opcoes, ordem)')
+        .select('*, perguntas(*)')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map((s: { id: string; titulo: string; perguntas: QuestionData[] }) => ({
+      return (data || []).map((s: { id: string; titulo: string; versao?: number; perguntas: QuestionData[] }) => ({
         id: s.id,
         titulo: s.titulo,
+        versao: (s.versao as number) || 1,
         perguntas: (s.perguntas || []).sort((a: QuestionData, b: QuestionData) => a.ordem - b.ordem),
       }));
     },
+    staleTime: 30_000,
   });
 
   // Fetch responses for selected survey
@@ -115,29 +140,60 @@ export function SurveyResults() {
       const { data, error } = await supabase
         .from('respostas')
         .select(`
-          id, pesquisa_id, entrevistador_id, respostas, created_at,
+          *,
           profiles:profiles!respostas_entrevistador_profile_fkey(nome, equipe)
         `)
         .eq('pesquisa_id', selectedSurvey)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []) as unknown as ResponseRow[];
+      return (data || []).map((r: Record<string, unknown>) => ({
+        ...r,
+        pesquisa_versao: (r.pesquisa_versao as number) || 1,
+      })) as unknown as ResponseRow[];
     },
     enabled: !!selectedSurvey,
+    staleTime: 15_000,
   });
 
   const survey = surveys?.find(s => s.id === selectedSurvey);
-  const questions = useMemo(() => survey?.perguntas || [], [survey]);
-  const totalResponses = responses?.length || 0;
+
+  // Compute available versions from responses
+  const availableVersions = useMemo(() => {
+    if (!responses?.length) return [1];
+    const versions = Array.from(new Set(responses.map(r => r.pesquisa_versao || 1))).sort((a, b) => a - b);
+    return versions.length > 0 ? versions : [1];
+  }, [responses]);
+
+  // Filter responses by selected version
+  const filteredResponses = useMemo(() => {
+    if (!responses) return [];
+    if (selectedVersion === 'all') return responses;
+    return responses.filter(r => (r.pesquisa_versao || 1) === Number(selectedVersion));
+  }, [responses, selectedVersion]);
+
+  // Get questions for the selected version
+  const questions = useMemo(() => {
+    if (!survey?.perguntas?.length) return [];
+    if (selectedVersion === 'all') {
+      // Show questions for the latest version
+      const latestVersion = survey.versao || 1;
+      const versionQuestions = survey.perguntas.filter(q => (q.versao || 1) === latestVersion);
+      return versionQuestions.length > 0 ? versionQuestions : survey.perguntas;
+    }
+    const versionQuestions = survey.perguntas.filter(q => (q.versao || 1) === Number(selectedVersion));
+    return versionQuestions.length > 0 ? versionQuestions : survey.perguntas;
+  }, [survey, selectedVersion]);
+
+  const totalResponses = filteredResponses.length;
 
   // ── Per-question analysis ──
   const questionAnalysis = useMemo((): QuestionAnalysis[] => {
-    if (!questions.length || !responses?.length) return [];
+    if (!questions.length || !filteredResponses?.length) return [];
     return questions.map((q, idx) => {
       const counts = new Map<string, number>();
       let totalAnswered = 0;
 
-      for (const resp of responses) {
+      for (const resp of filteredResponses) {
         const vals = extractValues(resp.respostas[q.id]);
         if (vals.length > 0) {
           totalAnswered++;
@@ -148,17 +204,17 @@ export function SurveyResults() {
       const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
       return { question: q, index: idx + 1, entries, total: totalAnswered };
     });
-  }, [questions, responses]);
+  }, [questions, filteredResponses]);
 
   // ── Cross-tabulation ──
   const crossData = useMemo(() => {
-    if (!crossRowQ || !crossColQ || !responses?.length) return null;
+    if (!crossRowQ || !crossColQ || !filteredResponses?.length) return null;
 
     const rowSet = new Set<string>();
     const colSet = new Set<string>();
     const matrix = new Map<string, Map<string, number>>();
 
-    for (const resp of responses) {
+    for (const resp of filteredResponses) {
       const rv = extractSingleValue(resp.respostas[crossRowQ]);
       const cv = extractSingleValue(resp.respostas[crossColQ]);
       if (!rv || !cv) continue;
@@ -175,7 +231,92 @@ export function SurveyResults() {
       cols: Array.from(colSet).sort(),
       matrix,
     };
-  }, [crossRowQ, crossColQ, responses]);
+  }, [crossRowQ, crossColQ, filteredResponses]);
+
+  // ── Merge answers mutation ──
+  const mergeMutation = useMutation({
+    mutationFn: async ({ questionId, oldValues, newValue }: { questionId: string; oldValues: string[]; newValue: string }) => {
+      // Find all responses that contain one of the old values for this question
+      const affectedResponses = (responses || []).filter(r => {
+        const vals = extractValues(r.respostas[questionId]);
+        return vals.some(v => oldValues.includes(v));
+      });
+
+      let updated = 0;
+      for (const resp of affectedResponses) {
+        const currentRespostas = { ...resp.respostas };
+        const currentVal = currentRespostas[questionId];
+
+        // Replace the value
+        if (typeof currentVal === 'string') {
+          const normalized = normalizeValue(currentVal);
+          if (oldValues.includes(normalized)) {
+            currentRespostas[questionId] = newValue;
+          }
+        } else if (Array.isArray(currentVal)) {
+          currentRespostas[questionId] = currentVal.map(v => {
+            const normalized = normalizeValue(v);
+            return oldValues.includes(normalized) ? newValue : v;
+          });
+        } else if (typeof currentVal === 'object' && currentVal !== null) {
+          const patched = { ...currentVal };
+          if (typeof patched.opcao === 'string' && oldValues.includes(normalizeValue(patched.opcao))) {
+            patched.opcao = newValue;
+          } else if (Array.isArray(patched.opcao)) {
+            patched.opcao = patched.opcao.map(v => oldValues.includes(normalizeValue(v)) ? newValue : v);
+          }
+          if (patched.outro && oldValues.includes(normalizeValue(patched.outro))) {
+            patched.outro = newValue;
+          }
+          currentRespostas[questionId] = patched;
+        }
+
+        const { error } = await supabase
+          .from('respostas')
+          .update({ respostas: currentRespostas })
+          .eq('id', resp.id);
+
+        if (error) throw error;
+        updated++;
+      }
+
+      return updated;
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} resposta(s) atualizadas!`);
+      queryClient.invalidateQueries({ queryKey: ['results-responses', selectedSurvey] });
+      setMergeDialogOpen(false);
+      setMergeSelectedValues([]);
+      setMergeTargetValue('');
+      setMergeQuestionId('');
+    },
+    onError: (error: Error) => {
+      toast.error('Erro ao unificar respostas', { description: error.message });
+    },
+  });
+
+  const openMergeDialog = (questionId: string, entries: [string, number][]) => {
+    setMergeQuestionId(questionId);
+    setMergeSelectedValues([]);
+    setMergeTargetValue('');
+    setMergeDialogOpen(true);
+  };
+
+  const handleMerge = () => {
+    if (mergeSelectedValues.length < 2) {
+      toast.error('Selecione pelo menos 2 valores para unificar');
+      return;
+    }
+    if (!mergeTargetValue.trim()) {
+      toast.error('Digite o valor final');
+      return;
+    }
+    mergeMutation.mutate({
+      questionId: mergeQuestionId,
+      oldValues: mergeSelectedValues,
+      newValue: mergeTargetValue.trim(),
+    });
+  };
 
   // ── Export to Word ──
   const handleExportWord = async () => {
@@ -566,14 +707,32 @@ export function SurveyResults() {
         </div>
       ) : (
         <>
-          {/* Stats bar */}
-          <div className="flex gap-3 flex-wrap">
+          {/* Stats bar + version filter */}
+          <div className="flex gap-3 flex-wrap items-center">
             <Badge variant="secondary" className="text-sm px-4 py-2">
               {totalResponses} respostas
             </Badge>
             <Badge variant="secondary" className="text-sm px-4 py-2">
               {questions.length} perguntas
             </Badge>
+            {availableVersions.length > 1 && (
+              <Select value={selectedVersion} onValueChange={setSelectedVersion}>
+                <SelectTrigger className="w-[180px] h-9">
+                  <SelectValue placeholder="Versão" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas versões ({responses?.length || 0})</SelectItem>
+                  {availableVersions.map(v => {
+                    const count = (responses || []).filter(r => (r.pesquisa_versao || 1) === v).length;
+                    return (
+                      <SelectItem key={v} value={String(v)}>
+                        Versão {v} ({count} coletas)
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Sub-tabs */}
@@ -608,7 +767,7 @@ export function SurveyResults() {
           {subTab === 'analysis' && (
             <div className="space-y-8">
               {questionAnalysis.map(a => (
-                <QuestionCard key={a.question.id} analysis={a} />
+                <QuestionCard key={a.question.id} analysis={a} onMerge={openMergeDialog} />
               ))}
             </div>
           )}
@@ -672,17 +831,85 @@ export function SurveyResults() {
           )}
         </>
       )}
+
+      {/* ── Merge Dialog ── */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Merge className="w-5 h-5" />
+              Unificar Respostas
+            </DialogTitle>
+            <DialogDescription>
+              Selecione os valores semelhantes que deseja unificar em um único valor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[400px] overflow-y-auto">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Selecione os valores para unificar:</p>
+              {questionAnalysis
+                .find(a => a.question.id === mergeQuestionId)
+                ?.entries.map(([label, count]) => (
+                  <label
+                    key={label}
+                    className={cn(
+                      'flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors',
+                      mergeSelectedValues.includes(label) ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+                    )}
+                  >
+                    <Checkbox
+                      checked={mergeSelectedValues.includes(label)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMergeSelectedValues(prev => [...prev, label]);
+                          if (!mergeTargetValue) setMergeTargetValue(label);
+                        } else {
+                          setMergeSelectedValues(prev => prev.filter(v => v !== label));
+                        }
+                      }}
+                    />
+                    <span className="flex-1 text-sm">{label}</span>
+                    <Badge variant="secondary" className="text-xs">{count}</Badge>
+                  </label>
+                ))}
+            </div>
+            {mergeSelectedValues.length >= 2 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Valor final unificado:</p>
+                <Input
+                  value={mergeTargetValue}
+                  onChange={(e) => setMergeTargetValue(e.target.value)}
+                  placeholder="Ex: Raquel Lyra"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {mergeSelectedValues.length} valores serão unificados em "{mergeTargetValue}"
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={handleMerge}
+              disabled={mergeSelectedValues.length < 2 || !mergeTargetValue.trim() || mergeMutation.isPending}
+            >
+              {mergeMutation.isPending ? 'Unificando...' : 'Unificar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // ── QuestionCard (collapsible) ──────────────────────────────
-function QuestionCard({ analysis }: { analysis: QuestionAnalysis }) {
+function QuestionCard({ analysis, onMerge }: { analysis: QuestionAnalysis; onMerge: (questionId: string, entries: [string, number][]) => void }) {
   const [open, setOpen] = useState(true);
   const { question, index, entries, total } = analysis;
   const showChart = entries.length > 0 && entries.length <= 15;
   const tipoPergunta = question.tipo_pergunta || 'estimulada';
   const chartData = entries.map(([name, value]) => ({ name, value }));
+  const isEspontanea = tipoPergunta === 'espontanea' || question.tipo === 'text';
 
   return (
     <div className="card-elevated overflow-hidden">
@@ -705,6 +932,20 @@ function QuestionCard({ analysis }: { analysis: QuestionAnalysis }) {
               <span className="text-xs text-muted-foreground">{total} respostas</span>
             </div>
           </div>
+          {isEspontanea && entries.length > 1 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMerge(question.id, entries);
+              }}
+            >
+              <Merge className="w-3.5 h-3.5 mr-1.5" />
+              Unificar
+            </Button>
+          )}
           <ChevronDown
             className={cn('w-5 h-5 text-muted-foreground transition-transform shrink-0', open && 'rotate-180')}
           />

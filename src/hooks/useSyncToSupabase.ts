@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { AnswerValue, SurveyResponse, SyncStatus } from '@/types/survey';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 const PENDING_KEY = 'lema_pending_responses';
@@ -76,7 +76,8 @@ export function useSyncToSupabase() {
         latitude: r.gps?.latitude,
         longitude: r.gps?.longitude,
         timestamp: r.timestamp,
-        clientId: r.id // Use ID as client ID for deduplication
+        clientId: r.id, // Use ID as client ID for deduplication
+        pesquisaVersao: r.pesquisaVersao || 1,
       }))
     };
 

@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AnswerValue, SurveyResponse } from '@/types/survey';
+import { useQuery } from '@tanstack/react-query';
 
 export function useResponses() {
   return useQuery({
@@ -9,16 +9,7 @@ export function useResponses() {
       const { data, error } = await supabase
         .from('respostas')
         .select(`
-          id,
-          pesquisa_id,
-          entrevistador_id,
-          respostas,
-          audio_url,
-          latitude,
-          longitude,
-          synced,
-          client_id,
-          created_at,
+          *,
           pesquisas (
             titulo
           ),
@@ -45,7 +36,9 @@ export function useResponses() {
         timestamp: r.created_at,
         synced: r.synced
       }));
-    }
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Survey, Question } from '@/types/survey';
+import { Question, Survey } from '@/types/survey';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 const SURVEYS_CACHE_KEY = 'lema_surveys_cache';
 
@@ -18,18 +18,20 @@ function getCachedSurveys(): Survey[] | undefined {
 
 // Shared select columns — used by all survey queries
 const SURVEY_SELECT = `
-  id, titulo, descricao, ativa, created_at,
-  blocos_perguntas ( id, titulo, descricao, ordem ),
-  perguntas ( id, texto, tipo, opcoes, tipo_pergunta, opcoes_sugeridas, permite_outro, bloco_id, obrigatoria, ordem )
+  *,
+  blocos_perguntas ( * ),
+  perguntas ( * )
 ` as const;
 
 // Single mapper: DB row → Survey (eliminates 3x duplication)
 interface DBBloco { id: string; titulo: string; descricao: string | null; ordem: number }
 interface DBPergunta { id: string; texto: string; tipo: string; opcoes: string[] | null; tipo_pergunta: string | null; opcoes_sugeridas: string[] | null; permite_outro: boolean; bloco_id: string | null; obrigatoria: boolean; ordem: number }
-interface DBPesquisa { id: string; titulo: string; descricao: string | null; ativa: boolean; created_at: string; blocos_perguntas: DBBloco[]; perguntas: DBPergunta[] }
+interface DBPesquisa { id: string; titulo: string; descricao: string | null; ativa: boolean; created_at: string; versao?: number; blocos_perguntas: DBBloco[]; perguntas: DBPergunta[] }
 
 function mapPesquisa(p: DBPesquisa): Survey {
+  const currentVersion = p.versao || 1;
   const blocos = (p.blocos_perguntas || [])
+    .filter((b) => (b as DBBloco & { versao?: number }).versao === undefined || (b as DBBloco & { versao?: number }).versao === currentVersion)
     .sort((a, b) => a.ordem - b.ordem)
     .map((b) => ({ id: b.id, titulo: b.titulo, descricao: b.descricao, ordem: b.ordem }));
   const blocoMap = new Map(blocos.map((b) => [b.id, b]));
@@ -40,8 +42,10 @@ function mapPesquisa(p: DBPesquisa): Survey {
     descricao: p.descricao || '',
     ativa: p.ativa,
     createdAt: p.created_at,
+    versao: currentVersion,
     blocos,
     perguntas: (p.perguntas || [])
+      .filter((q) => (q as DBPergunta & { versao?: number }).versao === undefined || (q as DBPergunta & { versao?: number }).versao === currentVersion)
       .sort((a, b) => a.ordem - b.ordem)
       .map((q): Question => ({
         id: q.id,

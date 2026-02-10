@@ -151,6 +151,7 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
         gps: gps,
         timestamp: new Date().toISOString(),
         synced: false,
+        pesquisaVersao: survey.versao || 1,
       };
 
       // Add to sync queue

@@ -29,6 +29,7 @@ export interface Survey {
   perguntas: Question[];
   ativa: boolean;
   createdAt: string;
+  versao?: number;
 }
 
 export type AnswerValue =
@@ -53,6 +54,7 @@ export interface SurveyResponse {
   } | null;
   timestamp: string;
   synced: boolean;
+  pesquisaVersao?: number;
 }
 
 export interface User {

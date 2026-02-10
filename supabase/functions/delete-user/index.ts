@@ -59,10 +59,11 @@ serve(async (req) => {
       );
     }
 
-    // Clean up dependent data first to avoid FK issues
+    // Preserve responses — set entrevistador_id to NULL instead of deleting
+    // This ensures collected data is never lost when removing interviewers
     const { error: respostasError } = await supabaseAdmin
       .from("respostas")
-      .delete()
+      .update({ entrevistador_id: null })
       .eq("entrevistador_id", userId);
 
     if (respostasError) {

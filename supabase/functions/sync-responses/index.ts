@@ -15,6 +15,7 @@ interface SyncPayload {
     longitude?: number;
     timestamp: string;
     clientId: string;
+    pesquisaVersao?: number;
   }>;
 }
 
@@ -121,7 +122,8 @@ Deno.serve(async (req) => {
             longitude: response.longitude,
             client_id: response.clientId,
             synced: true,
-            created_at: response.timestamp
+            created_at: response.timestamp,
+            pesquisa_versao: response.pesquisaVersao || 1,
           })
           .select('id')
           .single();

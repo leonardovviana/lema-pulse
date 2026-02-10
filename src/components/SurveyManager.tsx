@@ -1,29 +1,39 @@
+import { DataGrid } from '@/components/DataGrid';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from '@/components/ui/accordion';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DataGrid } from '@/components/DataGrid';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useResponses } from '@/hooks/useResponses';
 import {
+    AlertTriangle,
     Check,
     ClipboardList,
     Copy,
@@ -42,6 +52,7 @@ interface Survey {
   ativa: boolean;
   codigo_liberacao: string | null;
   created_at: string;
+  versao: number;
 }
 
 type PromptType = 'espontanea' | 'estimulada' | 'mista';
@@ -70,6 +81,13 @@ export function SurveyManager() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
   const [activeSurveyTab, setActiveSurveyTab] = useState<'questionario' | 'resultados'>('questionario');
+
+  // Safe delete state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteStep, setDeleteStep] = useState(1);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [surveyToDelete, setSurveyToDelete] = useState<Survey | null>(null);
+  const [deleteResponseCount, setDeleteResponseCount] = useState(0);
   
   // Form state
   const [titulo, setTitulo] = useState('');
@@ -146,8 +164,12 @@ export function SurveyManager() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return data as Survey[];
-    }
+      return (data || []).map((s: Record<string, unknown>) => ({
+        ...s,
+        versao: (s.versao as number) || 1,
+      })) as Survey[];
+    },
+    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -156,7 +178,30 @@ export function SurveyManager() {
     }
   }, [selectedSurveyId, surveys]);
 
-  const { data: responses } = useResponses();
+  const { data: responses } = useQuery({
+    queryKey: ['survey-responses', selectedSurveyId],
+    queryFn: async () => {
+      if (!selectedSurveyId) return [];
+      const { data, error } = await supabase
+        .from('respostas')
+        .select('*')
+        .eq('pesquisa_id', selectedSurveyId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []).map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        surveyId: r.pesquisa_id as string,
+        surveyTitulo: '',
+        entrevistadorId: r.entrevistador_id as string,
+        entrevistadorNome: '',
+        respostas: r.respostas as Record<string, unknown>,
+        timestamp: r.created_at as string,
+        synced: r.synced as boolean,
+      }));
+    },
+    enabled: !!selectedSurveyId,
+    staleTime: 30_000,
+  });
 
   // Create survey mutation (basic info only)
   const createMutation = useMutation({
@@ -196,29 +241,9 @@ export function SurveyManager() {
       const { data, error } = await supabase
         .from('pesquisas')
         .select(`
-          id,
-          titulo,
-          descricao,
-          ativa,
-          codigo_liberacao,
-          blocos_perguntas (
-            id,
-            titulo,
-            descricao,
-            ordem
-          ),
-          perguntas (
-            id,
-            texto,
-            tipo,
-            tipo_pergunta,
-            opcoes,
-            opcoes_sugeridas,
-            permite_outro,
-            obrigatoria,
-            bloco_id,
-            ordem
-          )
+          *,
+          blocos_perguntas (*),
+          perguntas (*)
         `)
         .eq('id', selectedSurveyId)
         .maybeSingle();
@@ -226,13 +251,18 @@ export function SurveyManager() {
       if (error) throw error;
       return data;
     },
-    enabled: !!selectedSurveyId
+    enabled: !!selectedSurveyId,
+    staleTime: 15_000,
   });
 
   useEffect(() => {
     if (!selectedSurvey) return;
 
+    const currentVersion = (selectedSurvey as Record<string, unknown>).versao as number || 1;
+
+    // Filter blocks/perguntas to show only current version
     const loadedBlocks = (selectedSurvey.blocos_perguntas || [])
+      .filter((b: { versao?: number }) => (b.versao || 1) === currentVersion)
       .sort((a: { ordem: number }, b: { ordem: number }) => a.ordem - b.ordem)
       .map((b: { id: string; titulo: string; descricao?: string | null }) => ({
         id: b.id,
@@ -241,6 +271,7 @@ export function SurveyManager() {
       }));
 
     const loadedQuestions = (selectedSurvey.perguntas || [])
+      .filter((q: { versao?: number }) => (q.versao || 1) === currentVersion)
       .sort((a: { ordem: number }, b: { ordem: number }) => a.ordem - b.ordem)
       .map((q: { id: string; texto: string; tipo_pergunta?: string | null; tipo?: string | null; opcoes?: string[] | null; opcoes_sugeridas?: string[] | null; obrigatoria?: boolean; permite_outro?: boolean; bloco_id?: string | null }) => ({
         id: q.id,
@@ -260,17 +291,45 @@ export function SurveyManager() {
 
   const saveQuestionarioMutation = useMutation({
     mutationFn: async ({ surveyId, blocks, questions }: { surveyId: string; blocks: BlockDraft[]; questions: QuestionDraft[] }) => {
-      const { error: deleteQuestionsError } = await supabase
-        .from('perguntas')
-        .delete()
+      // Check if there are existing responses for this survey
+      const { count: responseCount } = await supabase
+        .from('respostas')
+        .select('*', { count: 'exact', head: true })
         .eq('pesquisa_id', surveyId);
-      if (deleteQuestionsError) throw deleteQuestionsError;
 
-      const { error: deleteBlocksError } = await supabase
-        .from('blocos_perguntas')
-        .delete()
-        .eq('pesquisa_id', surveyId);
-      if (deleteBlocksError) throw deleteBlocksError;
+      const hasResponses = (responseCount || 0) > 0;
+
+      // Get current version
+      const { data: currentSurvey } = await supabase
+        .from('pesquisas')
+        .select('versao')
+        .eq('id', surveyId)
+        .single();
+
+      const currentVersion = (currentSurvey?.versao as number) || 1;
+      const newVersion = hasResponses ? currentVersion + 1 : currentVersion;
+
+      if (hasResponses) {
+        // DON'T delete old perguntas/blocos — they belong to old version(s)
+        // Just increment the version number on the pesquisa
+        await supabase
+          .from('pesquisas')
+          .update({ versao: newVersion })
+          .eq('id', surveyId);
+      } else {
+        // No responses yet — safe to delete old questions/blocks
+        const { error: deleteQuestionsError } = await supabase
+          .from('perguntas')
+          .delete()
+          .eq('pesquisa_id', surveyId);
+        if (deleteQuestionsError) throw deleteQuestionsError;
+
+        const { error: deleteBlocksError } = await supabase
+          .from('blocos_perguntas')
+          .delete()
+          .eq('pesquisa_id', surveyId);
+        if (deleteBlocksError) throw deleteBlocksError;
+      }
 
       const blockIdByOrder = new Map<number, string>();
 
@@ -283,6 +342,7 @@ export function SurveyManager() {
               titulo: block.titulo,
               descricao: block.descricao || null,
               ordem: index,
+              versao: newVersion,
             }))
           )
           .select('id, ordem');
@@ -321,6 +381,7 @@ export function SurveyManager() {
                 permite_outro: question.promptType === 'mista' ? question.allowOther : false,
                 obrigatoria: question.required,
                 ordem: index,
+                versao: newVersion,
               };
             })
           );
@@ -328,35 +389,69 @@ export function SurveyManager() {
         if (questionsError) throw questionsError;
       }
 
-      return true;
+      return { hasResponses, oldVersion: currentVersion, newVersion };
     },
-    onSuccess: () => {
-      toast.success('Questionario salvo!');
+    onSuccess: (result) => {
+      if (result.hasResponses) {
+        toast.success(`Questionário atualizado para a versão ${result.newVersion}!`, {
+          description: `As ${result.oldVersion > 1 ? result.oldVersion + ' versões anteriores e suas' : ''} coletas existentes foram preservadas.`,
+        });
+      } else {
+        toast.success('Questionário salvo!');
+      }
       queryClient.invalidateQueries({ queryKey: ['survey-details', selectedSurveyId] });
       queryClient.invalidateQueries({ queryKey: ['surveys'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-surveys'] });
     },
     onError: (error: Error) => {
-      toast.error('Erro ao salvar questionario', {
+      toast.error('Erro ao salvar questionário', {
         description: error.message
       });
     }
   });
 
 
-  // Delete survey mutation
+  // Delete survey mutation (safe multi-step)
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      // Delete responses first (cascade would do it, but being explicit)
+      const { error: respError } = await supabase
+        .from('respostas')
+        .delete()
+        .eq('pesquisa_id', id);
+      if (respError) throw respError;
+
+      // Delete questions
+      const { error: questError } = await supabase
+        .from('perguntas')
+        .delete()
+        .eq('pesquisa_id', id);
+      if (questError) throw questError;
+
+      // Delete blocks
+      const { error: blocoError } = await supabase
+        .from('blocos_perguntas')
+        .delete()
+        .eq('pesquisa_id', id);
+      if (blocoError) throw blocoError;
+
+      // Delete survey
       const { error } = await supabase
         .from('pesquisas')
         .delete()
         .eq('id', id);
-
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-surveys'] });
-      toast.success('Pesquisa excluída');
+      queryClient.invalidateQueries({ queryKey: ['surveys'] });
+      queryClient.invalidateQueries({ queryKey: ['all-surveys'] });
+      queryClient.invalidateQueries({ queryKey: ['responses'] });
+      queryClient.invalidateQueries({ queryKey: ['survey-responses'] });
+      queryClient.invalidateQueries({ queryKey: ['results-surveys'] });
+      toast.success('Pesquisa excluída permanentemente');
       setSelectedSurveyId(null);
+      closeSafeDeleteDialog();
     },
     onError: (error: Error) => {
       toast.error('Erro ao excluir pesquisa', {
@@ -364,6 +459,29 @@ export function SurveyManager() {
       });
     }
   });
+
+  const openSafeDeleteDialog = async (survey: Survey) => {
+    setSurveyToDelete(survey);
+    setDeleteStep(1);
+    setDeleteConfirmName('');
+
+    // Count responses
+    const { count } = await supabase
+      .from('respostas')
+      .select('*', { count: 'exact', head: true })
+      .eq('pesquisa_id', survey.id);
+
+    setDeleteResponseCount(count || 0);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeSafeDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setDeleteStep(1);
+    setDeleteConfirmName('');
+    setSurveyToDelete(null);
+    setDeleteResponseCount(0);
+  };
 
   const handleCopyCode = async (code: string) => {
     await navigator.clipboard.writeText(code);
@@ -439,9 +557,7 @@ export function SurveyManager() {
     );
   }
 
-  const filteredResponses = selectedSurveyId
-    ? (responses || []).filter((response) => response.surveyId === selectedSurveyId)
-    : [];
+  const filteredResponses = responses || [];
 
   return (
     <div className="space-y-6">
@@ -524,36 +640,56 @@ export function SurveyManager() {
                           </p>
                         )}
                       </div>
-                      <span className={cn(
-                        'text-xs px-2 py-1 rounded-full',
-                        survey.ativa ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                      )}>
-                        {survey.ativa ? 'Ativa' : 'Inativa'}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {survey.versao > 1 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                            v{survey.versao}
+                          </span>
+                        )}
+                        <span className={cn(
+                          'text-xs px-2 py-1 rounded-full',
+                          survey.ativa ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                        )}>
+                          {survey.ativa ? 'Ativa' : 'Inativa'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Key className="w-3 h-3" />
-                      <span>Código:</span>
-                      <span className="font-mono font-semibold text-foreground">
-                        {survey.codigo_liberacao || '------'}
-                      </span>
-                      {survey.codigo_liberacao && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleCopyCode(survey.codigo_liberacao!);
-                          }}
-                          className="h-6 px-2"
-                        >
-                          {copiedCode === survey.codigo_liberacao ? (
-                            <Check className="w-3 h-3 text-primary" />
-                          ) : (
-                            <Copy className="w-3 h-3" />
-                          )}
-                        </Button>
-                      )}
+                    <div className="mt-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Key className="w-3 h-3" />
+                        <span>Código:</span>
+                        <span className="font-mono font-semibold text-foreground">
+                          {survey.codigo_liberacao || '------'}
+                        </span>
+                        {survey.codigo_liberacao && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleCopyCode(survey.codigo_liberacao!);
+                            }}
+                            className="h-6 px-2"
+                          >
+                            {copiedCode === survey.codigo_liberacao ? (
+                              <Check className="w-3 h-3 text-primary" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openSafeDeleteDialog(survey);
+                        }}
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -576,8 +712,15 @@ export function SurveyManager() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-semibold">{selectedSurvey?.titulo}</h2>
-                  <p className="text-sm text-muted-foreground">Configure o questionario e acompanhe resultados.</p>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-semibold">{selectedSurvey?.titulo}</h2>
+                    {((selectedSurvey as Record<string, unknown>)?.versao as number || 1) > 1 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                        Versão {(selectedSurvey as Record<string, unknown>)?.versao as number}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">Configure o questionário e acompanhe resultados.</p>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
                   <Key className="w-4 h-4 text-primary" />
@@ -831,6 +974,116 @@ export function SurveyManager() {
           )}
         </div>
       </div>
+
+      {/* Safe Delete Dialog — multi-step confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) closeSafeDeleteDialog(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              {deleteStep === 1 && 'Excluir pesquisa?'}
+              {deleteStep === 2 && 'Tem certeza absoluta?'}
+              {deleteStep === 3 && 'Confirmação final'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {deleteStep === 1 && (
+                  <>
+                    <p>Você está prestes a excluir a pesquisa:</p>
+                    <p className="font-semibold text-foreground">"{surveyToDelete?.titulo}"</p>
+                    {deleteResponseCount > 0 ? (
+                      <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+                        <p className="text-destructive font-medium">
+                          ⚠️ Esta pesquisa possui {deleteResponseCount} coleta(s) registrada(s).
+                        </p>
+                        <p className="text-sm mt-1">
+                          Todas as coletas, respostas, áudios e dados associados serão excluídos permanentemente.
+                        </p>
+                      </div>
+                    ) : (
+                      <p>Esta pesquisa não possui coletas registradas.</p>
+                    )}
+                  </>
+                )}
+                {deleteStep === 2 && (
+                  <>
+                    <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+                      <p className="font-medium text-destructive">Esta ação é irreversível!</p>
+                      <ul className="text-sm mt-2 space-y-1 list-disc list-inside">
+                        <li>O questionário será excluído</li>
+                        <li>{deleteResponseCount} coleta(s) serão perdidas</li>
+                        <li>Dados de áudio associados serão removidos</li>
+                        <li>Não será possível recuperar nenhum dado</li>
+                      </ul>
+                    </div>
+                    <p className="text-sm">
+                      Para confirmar, digite o nome da pesquisa: <strong>{surveyToDelete?.titulo}</strong>
+                    </p>
+                    <Input
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      placeholder="Digite o nome da pesquisa"
+                      className="mt-2"
+                    />
+                  </>
+                )}
+                {deleteStep === 3 && (
+                  <>
+                    <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 text-center">
+                      <p className="text-destructive font-bold text-lg">ÚLTIMO AVISO</p>
+                      <p className="mt-2">
+                        Ao clicar em "Excluir Permanentemente", a pesquisa "{surveyToDelete?.titulo}"
+                        {deleteResponseCount > 0 && ` e todas as ${deleteResponseCount} coleta(s)`} serão
+                        excluídas para sempre.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={closeSafeDeleteDialog}>Cancelar</AlertDialogCancel>
+            {deleteStep === 1 && (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={(e) => { e.preventDefault(); setDeleteStep(2); }}
+              >
+                Continuar
+              </AlertDialogAction>
+            )}
+            {deleteStep === 2 && (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={deleteConfirmName.trim().toLowerCase() !== surveyToDelete?.titulo?.trim().toLowerCase()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (deleteConfirmName.trim().toLowerCase() === surveyToDelete?.titulo?.trim().toLowerCase()) {
+                    setDeleteStep(3);
+                  }
+                }}
+              >
+                Confirmar Nome
+              </AlertDialogAction>
+            )}
+            {deleteStep === 3 && (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (surveyToDelete) {
+                    deleteMutation.mutate(surveyToDelete.id);
+                  }
+                }}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Excluir Permanentemente
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

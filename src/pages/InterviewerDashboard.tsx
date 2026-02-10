@@ -1,30 +1,31 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { StatusIndicator } from '@/components/StatusIndicator';
-import { SyncButton } from '@/components/SyncButton';
-import { SurveyForm } from '@/components/SurveyForm';
 import { SurveyCodeInput } from '@/components/SurveyCodeInput';
+import { SurveyForm } from '@/components/SurveyForm';
+import { SyncButton } from '@/components/SyncButton';
+import { Button } from '@/components/ui/button';
 import { useSupabaseAuthContext } from '@/contexts/SupabaseAuthContext';
 import { useSyncToSupabase } from '@/hooks/useSyncToSupabase';
 import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button';
-import { 
-  ClipboardList, 
-  LogOut, 
-  Clock, 
-  ChevronRight,
-  CheckCircle2,
-  AlertTriangle,
-  Key,
-  X
-} from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    AlertTriangle,
+    CheckCircle2,
+    ChevronRight,
+    ClipboardList,
+    Clock,
+    Key,
+    LogOut,
+    X
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface UnlockedSurvey {
   id: string;
   titulo: string;
   descricao: string | null;
+  versao: number;
   blocos?: {
     id: string;
     titulo: string;
@@ -70,6 +71,72 @@ export default function InterviewerDashboard() {
     localStorage.setItem(UNLOCKED_SURVEYS_KEY, JSON.stringify(surveys));
   };
 
+  // Auto-check for survey version updates when online
+  useEffect(() => {
+    if (!navigator.onLine || unlockedSurveys.length === 0) return;
+
+    const checkUpdates = async () => {
+      for (const survey of unlockedSurveys) {
+        try {
+          const { data } = await supabase
+            .from('pesquisas')
+            .select('versao')
+            .eq('id', survey.id)
+            .single();
+
+          const serverVersion = (data?.versao as number) || 1;
+          const localVersion = survey.versao || 1;
+
+          if (serverVersion > localVersion) {
+            // Fetch updated questions for the new version
+            const [blocksResult, questionsResult] = await Promise.all([
+              supabase
+                .from('blocos_perguntas')
+                .select('id, titulo, descricao, ordem, versao')
+                .eq('pesquisa_id', survey.id)
+                .eq('versao', serverVersion)
+                .order('ordem', { ascending: true }),
+              supabase
+                .from('perguntas')
+                .select('*, versao')
+                .eq('pesquisa_id', survey.id)
+                .eq('versao', serverVersion)
+                .order('ordem', { ascending: true }),
+            ]);
+
+            if (!blocksResult.error && !questionsResult.error) {
+              const updatedSurvey: UnlockedSurvey = {
+                ...survey,
+                versao: serverVersion,
+                blocos: blocksResult.data || [],
+                perguntas: questionsResult.data || [],
+              };
+
+              setUnlockedSurveys(prev => {
+                const updated = prev.map(s => s.id === survey.id ? updatedSurvey : s);
+                localStorage.setItem(UNLOCKED_SURVEYS_KEY, JSON.stringify(updated));
+                return updated;
+              });
+
+              toast.info(`Pesquisa "${survey.titulo}" atualizada para versão ${serverVersion}`, {
+                description: 'Novas coletas usarão o questionário atualizado.',
+                duration: 5000,
+              });
+            }
+          }
+        } catch {
+          // Ignore — will retry on next online event
+        }
+      }
+    };
+
+    checkUpdates();
+
+    const handleOnline = () => { setTimeout(checkUpdates, 2000); };
+    window.addEventListener('online', handleOnline);
+    return () => { window.removeEventListener('online', handleOnline); };
+  }, [unlockedSurveys.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSurveyUnlocked = async (survey: { id: string; titulo: string; descricao: string | null }) => {
     // Check if already unlocked
     if (unlockedSurveys.some(s => s.id === survey.id)) {
@@ -79,18 +146,23 @@ export default function InterviewerDashboard() {
       return;
     }
 
-    // Fetch blocks and questions for this survey
+    // Fetch version, blocks and questions for this survey
     setIsLoadingSurvey(true);
     try {
-      const [blocksResult, questionsResult] = await Promise.all([
+      const [surveyResult, blocksResult, questionsResult] = await Promise.all([
+        supabase
+          .from('pesquisas')
+          .select('versao')
+          .eq('id', survey.id)
+          .single(),
         supabase
           .from('blocos_perguntas')
-          .select('id, titulo, descricao, ordem')
+          .select('id, titulo, descricao, ordem, versao')
           .eq('pesquisa_id', survey.id)
           .order('ordem', { ascending: true }),
         supabase
           .from('perguntas')
-          .select('*')
+          .select('*, versao')
           .eq('pesquisa_id', survey.id)
           .order('ordem', { ascending: true })
       ]);
@@ -98,11 +170,18 @@ export default function InterviewerDashboard() {
       if (blocksResult.error) throw blocksResult.error;
       if (questionsResult.error) throw questionsResult.error;
 
+      const currentVersion = (surveyResult.data?.versao as number) || 1;
+
+      // Filter to latest version only
+      const blocos = (blocksResult.data || []).filter((b: { versao?: number }) => (b.versao || 1) === currentVersion);
+      const perguntas = (questionsResult.data || []).filter((q: { versao?: number }) => (q.versao || 1) === currentVersion);
+
       const blocos = blocksResult.data || [];
       const perguntas = questionsResult.data || [];
 
       const fullSurvey: UnlockedSurvey = {
         ...survey,
+        versao: currentVersion,
         blocos,
         perguntas: perguntas || []
       };
@@ -140,6 +219,7 @@ export default function InterviewerDashboard() {
           descricao: selectedSurvey.descricao || '',
           ativa: true,
           createdAt: new Date().toISOString(),
+          versao: selectedSurvey.versao || 1,
           blocos: selectedSurvey.blocos,
           perguntas: selectedSurvey.perguntas.map(p => ({
             id: p.id,
@@ -280,6 +360,11 @@ export default function InterviewerDashboard() {
                         <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full">
                           {survey.perguntas.length} perguntas
                         </span>
+                        {(survey.versao || 1) > 1 && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                            v{survey.versao}
+                          </span>
+                        )}
                         <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full flex items-center gap-1">
                           <Key className="w-3 h-3" />
                           Liberada
