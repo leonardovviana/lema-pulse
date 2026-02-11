@@ -35,9 +35,36 @@ import { toast } from 'sonner';
 const LEMA_ORANGE = '#FF9F00';
 const LEMA_MAGENTA = '#90205D';
 const CHART_COLORS = [
-  LEMA_ORANGE, LEMA_MAGENTA, '#10B981', '#3B82F6',
-  '#8B5CF6', '#EC4899', '#F97316', '#06B6D4',
+  // Reds & Pinks
+  '#EF4444', '#F87171', '#FB7185', '#EC4899', '#F472B6', '#F0519E', '#E91E63', '#C2185B',
+  // Oranges & Ambers
+  '#FF9F00', '#FF7F00', '#FB923C', '#F97316', '#F97316', '#FF6B35', '#FFA500', '#FF8C00',
+  // Yellows
+  '#FCD34D', '#FDE047', '#FSBF0F', '#EAB308', '#FBBF24', '#FFD700', '#FFED4E', '#FFE066',
+  // Greens
+  '#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#059669', '#047857', '#65A30D', '#84CC16',
+  // Teals & Cyans
+  '#06B6D4', '#22D3EE', '#67E8F9', '#164E63', '#0891B2', '#00BCD4', '#009688', '#00ACC1',
+  // Blues
+  '#3B82F6', '#60A5FA', '#93C5FD', '#0D47A1', '#1E40AF', '#1E3A8A', '#2563EB', '#1F6FB8',
+  // Indigos & Purples
+  '#8B5CF6', '#A78BFA', '#DDD6FE', '#6366F1', '#4F46E5', '#4C1D95', '#7C3AED', '#6D28D9',
+  // Violets
+  '#A855F7', '#C084FC', '#E9D5FF', '#5B21B6', '#7E22CE', '#6B21A8', '#9333EA', '#7C2D12',
+  // Pinks
+  '#EC4899', '#F472B6', '#FBCFE8', '#BE185D', '#DB2777', '#D81B60', '#FF1493', '#FF69B4',
+  // Grays & Blues
+  '#64748B', '#78716C', '#57534E', '#6B7280', '#9CA3AF', '#D1D5DB', '#E5E7EB', '#F3F4F6',
+  // Additional vibrant colors for better coverage
+  '#FF6B9D', '#C44569', '#F8B500', '#00D9FF', '#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3',
+  '#38A169', '#D69E2E', '#3182CE', '#8B5FBF', '#DE68F5', '#FD7272', '#74B9FF', '#81ECEC',
+  '#55EFC4', '#FFA502', '#FF7675', '#6C63FF', '#FF1744', '#00E5FF', '#00BCD4', '#FF6D00',
 ];
+
+// Function to get a color from the palette (cycling if needed)
+const getChartColor = (index: number): string => {
+  return CHART_COLORS[index % CHART_COLORS.length];
+};
 
 // ── Types ──────────────────────────────────────────────
 interface QuestionData {
@@ -1025,7 +1052,7 @@ function QuestionCard({ analysis, onMerge }: { analysis: QuestionAnalysis; onMer
                         style={{ fontSize: 12, fontWeight: 600 }}
                       />
                       {chartData.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                        <Cell key={i} fill={getChartColor(i)} />
                       ))}
                     </Bar>
                   </BarChart>
