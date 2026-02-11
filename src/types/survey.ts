@@ -30,6 +30,7 @@ export interface Survey {
   ativa: boolean;
   createdAt: string;
   versao?: number;
+  shuffleOptions?: boolean;
 }
 
 export type AnswerValue =

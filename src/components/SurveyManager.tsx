@@ -16,6 +16,11 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -35,14 +40,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     AlertTriangle,
     Check,
+    ChevronDown,
     ClipboardList,
     Copy,
+    GripVertical,
     Key,
     Loader2,
     Plus,
+    Shuffle,
     Trash2
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Survey {
@@ -94,6 +102,12 @@ export function SurveyManager() {
   const [descricao, setDescricao] = useState('');
   const [blocks, setBlocks] = useState<BlockDraft[]>([]);
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [shuffleOptions, setShuffleOptions] = useState(false);
+  const [responsePage, setResponsePage] = useState(0);
+
+  const PAGE_SIZE = 50;
 
   const createLocalId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -154,6 +168,15 @@ export function SurveyManager() {
     setQuestions(prev => prev.filter(q => q.id !== id));
   };
 
+  const moveQuestion = (from: number, to: number) => {
+    setQuestions(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
   // Fetch surveys
   const { data: surveys, isLoading } = useQuery({
     queryKey: ['admin-surveys'],
@@ -178,26 +201,37 @@ export function SurveyManager() {
     }
   }, [selectedSurveyId, surveys]);
 
-  const { data: responses } = useQuery({
-    queryKey: ['survey-responses', selectedSurveyId],
+  const { data: responseData } = useQuery({
+    queryKey: ['survey-responses', selectedSurveyId, responsePage],
     queryFn: async () => {
-      if (!selectedSurveyId) return [];
-      const { data, error } = await supabase
+      if (!selectedSurveyId) return { rows: [], total: 0 };
+      const from = responsePage * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase
         .from('respostas')
-        .select('*')
+        .select(`
+          *,
+          profiles:profiles!respostas_entrevistador_profile_fkey(nome)
+        `, { count: 'exact' })
         .eq('pesquisa_id', selectedSurveyId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, to);
       if (error) throw error;
-      return (data || []).map((r: Record<string, unknown>) => ({
-        id: r.id as string,
-        surveyId: r.pesquisa_id as string,
-        surveyTitulo: '',
-        entrevistadorId: r.entrevistador_id as string,
-        entrevistadorNome: '',
-        respostas: r.respostas as Record<string, unknown>,
-        timestamp: r.created_at as string,
-        synced: r.synced as boolean,
-      }));
+      return {
+        rows: (data || []).map((r: Record<string, unknown>) => ({
+          id: r.id as string,
+          surveyId: r.pesquisa_id as string,
+          surveyTitulo: '',
+          entrevistadorId: r.entrevistador_id as string,
+          entrevistadorNome: ((r.profiles as { nome?: string } | null)?.nome) || 'Desconhecido',
+          respostas: r.respostas as Record<string, unknown>,
+          audioBlob: r.audio_url as string || undefined,
+          gps: (r.latitude && r.longitude) ? { latitude: r.latitude as number, longitude: r.longitude as number } : null,
+          timestamp: r.created_at as string,
+          synced: r.synced as boolean,
+        })),
+        total: count || 0,
+      };
     },
     enabled: !!selectedSurveyId,
     staleTime: 30_000,
@@ -287,7 +321,33 @@ export function SurveyManager() {
 
     setBlocks(loadedBlocks);
     setQuestions(loadedQuestions);
+    setShuffleOptions(!!(selectedSurvey as Record<string, unknown>).embaralhar_opcoes);
+    setResponsePage(0);
   }, [selectedSurvey]);
+
+  const currentVersionPerguntas = useMemo(() => {
+    if (!selectedSurvey?.perguntas) return [];
+    const version = (selectedSurvey as Record<string, unknown>).versao as number || 1;
+    return (selectedSurvey.perguntas as Array<{ id: string; texto: string; tipo?: string; tipo_pergunta?: string; versao?: number; ordem?: number }>)
+      .filter(q => (q.versao || 1) === version)
+      .sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  }, [selectedSurvey]);
+
+  const toggleShuffleMutation = useMutation({
+    mutationFn: async ({ surveyId, shuffle }: { surveyId: string; shuffle: boolean }) => {
+      const { error } = await supabase
+        .from('pesquisas')
+        .update({ embaralhar_opcoes: shuffle })
+        .eq('id', surveyId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['survey-details', selectedSurveyId] });
+      queryClient.invalidateQueries({ queryKey: ['surveys'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-surveys'] });
+      toast.success(shuffleOptions ? 'Opções serão embaralhadas' : 'Opções na ordem original');
+    },
+  });
 
   const saveQuestionarioMutation = useMutation({
     mutationFn: async ({ surveyId, blocks, questions }: { surveyId: string; blocks: BlockDraft[]; questions: QuestionDraft[] }) => {
@@ -557,7 +617,8 @@ export function SurveyManager() {
     );
   }
 
-  const filteredResponses = responses || [];
+  const filteredResponses = responseData?.rows || [];
+  const totalResponses = responseData?.total || 0;
 
   return (
     <div className="space-y-6">
@@ -752,6 +813,25 @@ export function SurveyManager() {
                 </TabsList>
 
                 <TabsContent value="questionario" className="space-y-4">
+                  <div className="flex items-center justify-between rounded-xl border p-4">
+                    <div className="flex items-center gap-3">
+                      <Shuffle className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <Label className="text-sm">Embaralhar opções</Label>
+                        <p className="text-xs text-muted-foreground">Opções aparecem em ordem aleatória para o entrevistador</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={shuffleOptions}
+                      onCheckedChange={(checked) => {
+                        setShuffleOptions(checked);
+                        if (selectedSurveyId) {
+                          toggleShuffleMutation.mutate({ surveyId: selectedSurveyId, shuffle: checked });
+                        }
+                      }}
+                    />
+                  </div>
+
                   <div className="space-y-3 rounded-xl border p-4">
                     <div className="flex items-center justify-between">
                       <Label>Blocos / Secoes</Label>
@@ -820,18 +900,58 @@ export function SurveyManager() {
                     {questions.length === 0 ? (
                       <p className="text-sm text-muted-foreground">Nenhuma pergunta adicionada.</p>
                     ) : (
-                      <Accordion type="multiple" className="space-y-2">
+                      <div>
                         {questions.map((question, index) => (
-                          <AccordionItem key={question.id} value={question.id} className="rounded-lg border">
-                            <AccordionTrigger className="px-3 py-2 text-sm">
-                              <div className="flex w-full items-center justify-between gap-3">
-                                <span>Pergunta {index + 1}</span>
-                                <span className="text-xs text-muted-foreground truncate">
-                                  {question.text || 'Sem texto'}
-                                </span>
+                          <div key={question.id}>
+                            {/* Drop zone BEFORE this question */}
+                            <div
+                              className={cn(
+                                'h-1 rounded-full mx-4 transition-all duration-200',
+                                dragOverIndex === index && dragIndex !== null && dragIndex !== index
+                                  ? 'bg-primary h-1.5 my-1 shadow-sm shadow-primary/30'
+                                  : 'my-0.5'
+                              )}
+                              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverIndex(index); }}
+                              onDragLeave={() => setDragOverIndex(null)}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (dragIndex !== null && dragIndex !== index && dragIndex !== index - 1) {
+                                  moveQuestion(dragIndex, dragIndex < index ? index - 1 : index);
+                                }
+                                setDragIndex(null);
+                                setDragOverIndex(null);
+                              }}
+                            />
+                            <div
+                              draggable
+                              onDragStart={(e) => {
+                                setDragIndex(index);
+                                e.dataTransfer.effectAllowed = 'move';
+                                if (e.currentTarget instanceof HTMLElement) {
+                                  e.dataTransfer.setDragImage(e.currentTarget, 20, 20);
+                                }
+                              }}
+                              onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                              className={cn(
+                                'rounded-lg border transition-all duration-200',
+                                dragIndex === index && 'opacity-40 scale-[0.98] border-dashed border-primary/40 bg-muted/50',
+                                dragIndex !== null && dragIndex !== index && 'border-muted-foreground/10'
+                              )}
+                            >
+                            <Collapsible>
+                              <div className="flex items-center px-3 py-2 gap-2">
+                                <GripVertical className={cn('w-4 h-4 text-muted-foreground shrink-0 transition-colors', dragIndex === null ? 'cursor-grab' : 'cursor-grabbing')} />
+                                <CollapsibleTrigger asChild>
+                                  <button type="button" className="group flex w-full items-center justify-between gap-3 text-sm font-medium text-left">
+                                    <span className="shrink-0">Pergunta {index + 1}</span>
+                                    <span className="text-xs text-muted-foreground truncate">
+                                      {question.text || 'Sem texto'}
+                                    </span>
+                                    <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                                  </button>
+                                </CollapsibleTrigger>
                               </div>
-                            </AccordionTrigger>
-                            <AccordionContent className="px-3 pb-3">
+                              <CollapsibleContent className="px-3 pb-3">
                               <div className="space-y-3">
                                 <div className="flex items-center justify-between">
                                   <p className="text-xs text-muted-foreground">Editar pergunta</p>
@@ -949,10 +1069,33 @@ export function SurveyManager() {
                                   </Select>
                                 </div>
                               </div>
-                            </AccordionContent>
-                          </AccordionItem>
+                              </CollapsibleContent>
+                            </Collapsible>
+                            </div>
+                            {/* Drop zone AFTER the last question */}
+                            {index === questions.length - 1 && (
+                              <div
+                                className={cn(
+                                  'h-1 rounded-full mx-4 transition-all duration-200',
+                                  dragOverIndex === questions.length && dragIndex !== null && dragIndex !== questions.length - 1
+                                    ? 'bg-primary h-1.5 my-1 shadow-sm shadow-primary/30'
+                                    : 'my-0.5'
+                                )}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverIndex(questions.length); }}
+                                onDragLeave={() => setDragOverIndex(null)}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (dragIndex !== null && dragIndex !== questions.length - 1) {
+                                    moveQuestion(dragIndex, questions.length - 1);
+                                  }
+                                  setDragIndex(null);
+                                  setDragOverIndex(null);
+                                }}
+                              />
+                            )}
+                          </div>
                         ))}
-                      </Accordion>
+                      </div>
                     )}
                   </div>
 
@@ -967,7 +1110,14 @@ export function SurveyManager() {
                 </TabsContent>
 
                 <TabsContent value="resultados" className="space-y-4">
-                  <DataGrid responses={filteredResponses} />
+                  <DataGrid
+                    responses={filteredResponses}
+                    questions={currentVersionPerguntas}
+                    totalCount={totalResponses}
+                    page={responsePage}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setResponsePage}
+                  />
                 </TabsContent>
               </Tabs>
             </div>

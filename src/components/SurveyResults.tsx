@@ -2,17 +2,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    Dialog, DialogContent, DialogDescription,
-    DialogFooter,
-    DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter,
+  DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-    Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -21,13 +21,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart3, ChevronDown, Download, FileText, Merge, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
-    Bar,
-    BarChart,
-    CartesianGrid,
-    Cell, LabelList,
-    ResponsiveContainer,
-    Tooltip,
-    XAxis, YAxis,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell, LabelList,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis, YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
 
@@ -236,36 +236,55 @@ export function SurveyResults() {
   // ── Merge answers mutation ──
   const mergeMutation = useMutation({
     mutationFn: async ({ questionId, oldValues, newValue }: { questionId: string; oldValues: string[]; newValue: string }) => {
+      // Case-insensitive set for matching
+      const oldSet = new Set(oldValues.map(v => v.toLowerCase()));
+      const matches = (v: string) => oldSet.has(normalizeValue(v).toLowerCase());
+
+      // Fetch ALL responses for this survey fresh from DB (avoid stale closure data)
+      const { data: freshResponses, error: fetchError } = await supabase
+        .from('respostas')
+        .select('id, respostas')
+        .eq('pesquisa_id', selectedSurvey);
+
+      if (fetchError) throw fetchError;
+      if (!freshResponses?.length) throw new Error('Nenhuma resposta encontrada');
+
       // Find all responses that contain one of the old values for this question
-      const affectedResponses = (responses || []).filter(r => {
-        const vals = extractValues(r.respostas[questionId]);
-        return vals.some(v => oldValues.includes(v));
+      const affectedResponses = freshResponses.filter(r => {
+        const respostas = r.respostas as Record<string, AnswerValue>;
+        const vals = extractValues(respostas[questionId]);
+        return vals.some(v => matches(v));
       });
 
+      if (affectedResponses.length === 0) {
+        throw new Error('Nenhuma resposta correspondente encontrada para unificar');
+      }
+
       let updated = 0;
+      const errors: string[] = [];
+
       for (const resp of affectedResponses) {
-        const currentRespostas = { ...resp.respostas };
+        const currentRespostas = { ...(resp.respostas as Record<string, AnswerValue>) };
         const currentVal = currentRespostas[questionId];
 
         // Replace the value
         if (typeof currentVal === 'string') {
-          const normalized = normalizeValue(currentVal);
-          if (oldValues.includes(normalized)) {
+          if (matches(currentVal)) {
             currentRespostas[questionId] = newValue;
           }
         } else if (Array.isArray(currentVal)) {
-          currentRespostas[questionId] = currentVal.map(v => {
-            const normalized = normalizeValue(v);
-            return oldValues.includes(normalized) ? newValue : v;
-          });
+          const replaced = currentVal.map(v => matches(v) ? newValue : v);
+          // Deduplicate: if multiple old values mapped to same newValue, avoid duplicates
+          currentRespostas[questionId] = [...new Set(replaced)];
         } else if (typeof currentVal === 'object' && currentVal !== null) {
           const patched = { ...currentVal };
-          if (typeof patched.opcao === 'string' && oldValues.includes(normalizeValue(patched.opcao))) {
+          if (typeof patched.opcao === 'string' && matches(patched.opcao)) {
             patched.opcao = newValue;
           } else if (Array.isArray(patched.opcao)) {
-            patched.opcao = patched.opcao.map(v => oldValues.includes(normalizeValue(v)) ? newValue : v);
+            const replaced = patched.opcao.map(v => matches(v) ? newValue : v);
+            patched.opcao = [...new Set(replaced)];
           }
-          if (patched.outro && oldValues.includes(normalizeValue(patched.outro))) {
+          if (patched.outro && matches(patched.outro)) {
             patched.outro = newValue;
           }
           currentRespostas[questionId] = patched;
@@ -276,14 +295,24 @@ export function SurveyResults() {
           .update({ respostas: currentRespostas })
           .eq('id', resp.id);
 
-        if (error) throw error;
-        updated++;
+        if (error) {
+          errors.push(`Resposta ${resp.id}: ${error.message}`);
+        } else {
+          updated++;
+        }
       }
 
-      return updated;
+      if (errors.length > 0 && updated === 0) {
+        throw new Error(`Falha ao atualizar: ${errors[0]}`);
+      }
+
+      return { updated, errors: errors.length };
     },
-    onSuccess: (count) => {
-      toast.success(`${count} resposta(s) atualizadas!`);
+    onSuccess: (result) => {
+      const msg = result.errors > 0
+        ? `${result.updated} resposta(s) atualizadas, ${result.errors} falha(s)`
+        : `${result.updated} resposta(s) atualizadas!`;
+      toast.success(msg);
       queryClient.invalidateQueries({ queryKey: ['results-responses', selectedSurvey] });
       setMergeDialogOpen(false);
       setMergeSelectedValues([]);

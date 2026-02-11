@@ -26,7 +26,7 @@ const SURVEY_SELECT = `
 // Single mapper: DB row → Survey (eliminates 3x duplication)
 interface DBBloco { id: string; titulo: string; descricao: string | null; ordem: number }
 interface DBPergunta { id: string; texto: string; tipo: string; opcoes: string[] | null; tipo_pergunta: string | null; opcoes_sugeridas: string[] | null; permite_outro: boolean; bloco_id: string | null; obrigatoria: boolean; ordem: number }
-interface DBPesquisa { id: string; titulo: string; descricao: string | null; ativa: boolean; created_at: string; versao?: number; blocos_perguntas: DBBloco[]; perguntas: DBPergunta[] }
+interface DBPesquisa { id: string; titulo: string; descricao: string | null; ativa: boolean; created_at: string; versao?: number; embaralhar_opcoes?: boolean; blocos_perguntas: DBBloco[]; perguntas: DBPergunta[] }
 
 function mapPesquisa(p: DBPesquisa): Survey {
   const currentVersion = p.versao || 1;
@@ -43,6 +43,7 @@ function mapPesquisa(p: DBPesquisa): Survey {
     ativa: p.ativa,
     createdAt: p.created_at,
     versao: currentVersion,
+    shuffleOptions: p.embaralhar_opcoes || false,
     blocos,
     perguntas: (p.perguntas || [])
       .filter((q) => (q as DBPergunta & { versao?: number }).versao === undefined || (q as DBPergunta & { versao?: number }).versao === currentVersion)

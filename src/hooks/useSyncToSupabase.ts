@@ -1,177 +1,197 @@
 import { supabase } from '@/integrations/supabase/client';
 import { AnswerValue, SurveyResponse, SyncStatus } from '@/types/survey';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 const PENDING_KEY = 'lema_pending_responses';
 const SYNCED_KEY = 'lema_synced_responses';
+const SYNC_EVENT = 'lema-sync-state-change';
 
-export function useSyncToSupabase() {
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
-    isOnline: navigator.onLine,
-    pendingCount: 0,
-    lastSyncAt: null,
-    isSyncing: false,
+// ── Global singleton: shared across all hook instances ──
+let _isSyncing = false;
+
+function readPending(): SurveyResponse[] {
+  try {
+    const d = localStorage.getItem(PENDING_KEY);
+    return d ? JSON.parse(d) : [];
+  } catch { return []; }
+}
+
+function writePending(responses: SurveyResponse[]) {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(responses));
+}
+
+function readSynced(): SurveyResponse[] {
+  try {
+    const d = localStorage.getItem(SYNCED_KEY);
+    return d ? JSON.parse(d) : [];
+  } catch { return []; }
+}
+
+/** Broadcast a state change so every hook instance re-reads from localStorage */
+function broadcast() {
+  window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+}
+
+/** Send responses to Supabase edge function */
+async function syncToSupabase(responses: SurveyResponse[]): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Não autenticado');
+
+  const payload = {
+    responses: responses.map(r => ({
+      id: r.id,
+      surveyId: r.surveyId,
+      respostas: r.respostas,
+      audioBase64: r.audioBlob || undefined,
+      latitude: r.gps?.latitude,
+      longitude: r.gps?.longitude,
+      timestamp: r.timestamp,
+      clientId: r.id,
+      pesquisaVersao: r.pesquisaVersao || 1,
+    }))
+  };
+
+  const { data, error } = await supabase.functions.invoke('sync-responses', {
+    body: payload
   });
 
-  // Get pending responses from localStorage
-  const getPendingResponses = useCallback((): SurveyResponse[] => {
-    try {
-      const data = localStorage.getItem(PENDING_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  }, []);
+  if (error) throw error;
+  return data?.success || false;
+}
 
-  // Get synced responses from localStorage (for offline display)
-  const getSyncedResponses = useCallback((): SurveyResponse[] => {
-    try {
-      const data = localStorage.getItem(SYNCED_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  }, []);
+/** Core sync logic – called once even if multiple hook instances exist */
+async function doSync(silent = false): Promise<void> {
+  if (!navigator.onLine) {
+    if (!silent) toast.error('Sem conexão', { description: 'Conecte-se à internet para sincronizar.' });
+    return;
+  }
 
-  // Save pending responses
-  const savePendingResponses = useCallback((responses: SurveyResponse[]) => {
-    localStorage.setItem(PENDING_KEY, JSON.stringify(responses));
-    setSyncStatus(prev => ({ ...prev, pendingCount: responses.length }));
-  }, []);
+  const pending = readPending();
+  if (pending.length === 0) {
+    if (!silent) toast.info('Nada para sincronizar');
+    return;
+  }
 
-  // Add a new response to the queue
-  const addResponse = useCallback((response: SurveyResponse) => {
-    const pending = getPendingResponses();
-    const newResponse = { ...response, synced: false };
-    pending.push(newResponse);
-    savePendingResponses(pending);
-    
-    toast.info('Pesquisa salva localmente', {
-      description: navigator.onLine 
-        ? 'Sincronizando...' 
-        : 'Será sincronizada quando houver conexão.',
+  if (_isSyncing) return;           // avoid concurrent syncs
+  _isSyncing = true;
+  broadcast();                       // update UI → "syncing…"
+
+  try {
+    await syncToSupabase(pending);
+
+    // ── Move to synced cache (without audio to save space) ──
+    const MAX_HISTORY = 50;
+    const cleanPending = pending.map(({ audioBlob: _, ...rest }) => ({ ...rest, synced: true }));
+    const cleanSynced  = readSynced().map(r => {
+      if ('audioBlob' in r) { const { audioBlob: _, ...rest } = r; return rest; }
+      return r;
     });
+    const updated = [...cleanSynced, ...cleanPending].slice(-MAX_HISTORY);
 
-    // Try to sync immediately if online
-    if (navigator.onLine) {
-      syncNow();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getPendingResponses, savePendingResponses]);
+    try { localStorage.setItem(SYNCED_KEY, JSON.stringify(updated)); }
+    catch { try { localStorage.setItem(SYNCED_KEY, JSON.stringify(cleanPending.slice(-20))); } catch { /* */ } }
 
-  // Sync to Supabase
-  const syncToSupabase = useCallback(async (responses: SurveyResponse[]): Promise<boolean> => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      throw new Error('Not authenticated');
-    }
+    // ── Clear pending ──
+    writePending([]);
+    _isSyncing = false;
+    broadcast();
 
-    const payload = {
-      responses: responses.map(r => ({
-        id: r.id,
-        surveyId: r.surveyId,
-        respostas: r.respostas,
-        audioBase64: r.audioBlob || undefined,
-        latitude: r.gps?.latitude,
-        longitude: r.gps?.longitude,
-        timestamp: r.timestamp,
-        clientId: r.id, // Use ID as client ID for deduplication
-        pesquisaVersao: r.pesquisaVersao || 1,
-      }))
-    };
-
-    const { data, error } = await supabase.functions.invoke('sync-responses', {
-      body: payload
+    toast.success('Sincronização concluída!', {
+      description: `${pending.length} pesquisa(s) enviada(s) com sucesso.`,
     });
+  } catch (error: unknown) {
+    _isSyncing = false;
+    broadcast();
+    toast.error('Erro na sincronização', {
+      description: error instanceof Error ? error.message : 'Tente novamente em alguns instantes.',
+    });
+  }
+}
 
-    if (error) {
-      throw error;
-    }
+// ── Hook ──────────────────────────────────────────────────
+export function useSyncToSupabase() {
+  const buildStatus = useCallback((): SyncStatus => ({
+    isOnline: navigator.onLine,
+    pendingCount: readPending().length,
+    lastSyncAt: null,
+    isSyncing: _isSyncing,
+  }), []);
 
-    return data?.success || false;
-  }, []);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(buildStatus);
+  const lastSyncRef = useRef<string | null>(null);
 
-  // Sync all pending responses
-  const syncNow = useCallback(async () => {
-    if (!navigator.onLine) {
-      toast.error('Sem conexão', {
-        description: 'Conecte-se à internet para sincronizar.',
-      });
-      return;
-    }
-
-    const pending = getPendingResponses();
-    if (pending.length === 0) {
-      toast.info('Nada para sincronizar');
-      return;
-    }
-
-    setSyncStatus(prev => ({ ...prev, isSyncing: true }));
-
-    try {
-      await syncToSupabase(pending);
-      
-      // Move to synced cache
-      const synced = getSyncedResponses();
-      const nowSynced = pending.map(r => ({ ...r, synced: true }));
-      localStorage.setItem(SYNCED_KEY, JSON.stringify([...synced, ...nowSynced]));
-      
-      // Clear pending
-      savePendingResponses([]);
-      
-      const now = new Date().toISOString();
-      setSyncStatus(prev => ({
+  // Refresh status whenever the broadcast event fires
+  const refresh = useCallback(() => {
+    setSyncStatus(prev => {
+      const pending = readPending().length;
+      return {
         ...prev,
-        isSyncing: false,
-        lastSyncAt: now,
-        pendingCount: 0,
-      }));
+        isOnline: navigator.onLine,
+        pendingCount: pending,
+        isSyncing: _isSyncing,
+        lastSyncAt: (pending === 0 && prev.pendingCount > 0)
+          ? new Date().toISOString()
+          : prev.lastSyncAt,
+      };
+    });
+  }, []);
 
-      toast.success('Sincronização concluída!', {
-        description: `${pending.length} pesquisa(s) enviada(s) com sucesso.`,
-      });
-    } catch (error: unknown) {
-      setSyncStatus(prev => ({ ...prev, isSyncing: false }));
-      toast.error('Erro na sincronização', {
-        description: error instanceof Error ? error.message : 'Tente novamente em alguns instantes.',
-      });
-    }
-  }, [getPendingResponses, getSyncedResponses, savePendingResponses, syncToSupabase]);
-
-  // Online/Offline listeners
   useEffect(() => {
-    const handleOnline = () => {
-      setSyncStatus(prev => ({ ...prev, isOnline: true }));
+    const onSyncEvent = () => refresh();
+    const onOnline = () => {
+      refresh();
       toast.success('Conexão restabelecida!');
-      // Auto-sync when back online
-      setTimeout(syncNow, 1000);
+      setTimeout(() => doSync(true), 800);
+    };
+    const onOffline = () => {
+      refresh();
+      toast.warning('Você está offline', { description: 'As pesquisas serão salvas localmente.' });
     };
 
-    const handleOffline = () => {
-      setSyncStatus(prev => ({ ...prev, isOnline: false }));
-      toast.warning('Você está offline', {
-        description: 'As pesquisas serão salvas localmente.',
-      });
-    };
+    window.addEventListener(SYNC_EVENT, onSyncEvent);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Initialize pending count
-    const pending = getPendingResponses();
-    setSyncStatus(prev => ({ ...prev, pendingCount: pending.length }));
+    // Initial read
+    refresh();
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener(SYNC_EVENT, onSyncEvent);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
     };
-  }, [getPendingResponses, syncNow]);
+  }, [refresh]);
 
-  // Get all responses (from Supabase + pending)
+  /** Add a response and immediately try to sync */
+  const addResponse = useCallback((response: SurveyResponse) => {
+    const pending = readPending();
+    pending.push({ ...response, synced: false });
+    writePending(pending);
+    broadcast();
+
+    toast.info('Pesquisa salva localmente', {
+      description: navigator.onLine ? 'Sincronizando...' : 'Será sincronizada quando houver conexão.',
+    });
+
+    if (navigator.onLine) {
+      // Small delay so caller can finish its work before sync starts
+      setTimeout(() => doSync(true), 300);
+    }
+  }, []);
+
+  /** Manually trigger sync */
+  const syncNow = useCallback(async () => {
+    await doSync(false);
+  }, []);
+
+  /** Read pending responses from localStorage */
+  const getPendingResponses = useCallback((): SurveyResponse[] => readPending(), []);
+
+  /** Get all responses (server + pending) for display */
   const getAllResponses = useCallback(async (): Promise<SurveyResponse[]> => {
-    const pending = getPendingResponses();
-    
+    const pending = readPending();
+
     try {
       const { data, error } = await supabase
         .from('respostas')
@@ -204,29 +224,24 @@ export function useSyncToSupabase() {
         entrevistadorNome: (r.profiles as { nome?: string } | null)?.nome || 'Desconhecido',
         respostas: r.respostas as Record<string, AnswerValue>,
         audioBlob: r.audio_url || undefined,
-        gps: r.latitude && r.longitude ? {
-          latitude: r.latitude,
-          longitude: r.longitude
-        } : null,
+        gps: r.latitude && r.longitude ? { latitude: r.latitude, longitude: r.longitude } : null,
         timestamp: r.created_at,
         synced: true
       }));
 
-      // Combine with pending (avoiding duplicates by ID)
       const syncedIds = new Set(syncedResponses.map(r => r.id));
       const uniquePending = pending.filter(p => !syncedIds.has(p.id));
 
       return [...uniquePending, ...syncedResponses].sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
-    } catch (error) {
-      // If offline or error, return local data
-      const synced = getSyncedResponses();
+    } catch {
+      const synced = readSynced();
       return [...pending, ...synced].sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
     }
-  }, [getPendingResponses, getSyncedResponses]);
+  }, []);
 
   return {
     syncStatus,

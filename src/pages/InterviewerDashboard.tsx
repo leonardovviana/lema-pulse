@@ -20,12 +20,14 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface UnlockedSurvey {
   id: string;
   titulo: string;
   descricao: string | null;
   versao: number;
+  shuffleOptions?: boolean;
   blocos?: {
     id: string;
     titulo: string;
@@ -80,7 +82,7 @@ export default function InterviewerDashboard() {
         try {
           const { data } = await supabase
             .from('pesquisas')
-            .select('versao')
+            .select('versao, embaralhar_opcoes')
             .eq('id', survey.id)
             .single();
 
@@ -108,6 +110,7 @@ export default function InterviewerDashboard() {
               const updatedSurvey: UnlockedSurvey = {
                 ...survey,
                 versao: serverVersion,
+                shuffleOptions: !!(data as Record<string, unknown>)?.embaralhar_opcoes,
                 blocos: blocksResult.data || [],
                 perguntas: questionsResult.data || [],
               };
@@ -152,7 +155,7 @@ export default function InterviewerDashboard() {
       const [surveyResult, blocksResult, questionsResult] = await Promise.all([
         supabase
           .from('pesquisas')
-          .select('versao')
+          .select('versao, embaralhar_opcoes')
           .eq('id', survey.id)
           .single(),
         supabase
@@ -176,12 +179,10 @@ export default function InterviewerDashboard() {
       const blocos = (blocksResult.data || []).filter((b: { versao?: number }) => (b.versao || 1) === currentVersion);
       const perguntas = (questionsResult.data || []).filter((q: { versao?: number }) => (q.versao || 1) === currentVersion);
 
-      const blocos = blocksResult.data || [];
-      const perguntas = questionsResult.data || [];
-
       const fullSurvey: UnlockedSurvey = {
         ...survey,
         versao: currentVersion,
+        shuffleOptions: !!(surveyResult.data as Record<string, unknown>)?.embaralhar_opcoes,
         blocos,
         perguntas: perguntas || []
       };
@@ -220,6 +221,7 @@ export default function InterviewerDashboard() {
           ativa: true,
           createdAt: new Date().toISOString(),
           versao: selectedSurvey.versao || 1,
+          shuffleOptions: selectedSurvey.shuffleOptions || false,
           blocos: selectedSurvey.blocos,
           perguntas: selectedSurvey.perguntas.map(p => ({
             id: p.id,

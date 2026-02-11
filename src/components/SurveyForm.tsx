@@ -34,7 +34,21 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
   const [gps, setGps] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const totalSteps = survey.perguntas.length + 1; // +1 for start step
+  // Shuffle options once per session (question order stays fixed)
+  const [perguntas] = useState<Question[]>(() => {
+    if (!survey.shuffleOptions) return survey.perguntas;
+    return survey.perguntas.map(q => {
+      if (!q.options || q.options.length <= 1) return q;
+      const shuffled = [...q.options];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return { ...q, options: shuffled };
+    });
+  });
+
+  const totalSteps = perguntas.length + 1; // +1 for start step
   const progress = (currentStep / totalSteps) * 100;
 
   // Start survey: capture GPS and start recording
@@ -94,7 +108,7 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
   const canProceed = () => {
     if (currentStep === 0) return true;
     
-    const question = survey.perguntas[currentStep - 1];
+    const question = perguntas[currentStep - 1];
     if (!question.required) return true;
     
     const answer = answers[question.id];
@@ -353,7 +367,7 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-muted-foreground">
-            {currentStep === 0 ? 'Início' : `Pergunta ${currentStep} de ${survey.perguntas.length}`}
+            {currentStep === 0 ? 'Início' : `Pergunta ${currentStep} de ${perguntas.length}`}
           </span>
           <span className="text-sm font-medium">{Math.round(progress)}%</span>
         </div>
@@ -414,17 +428,17 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
               <ChevronRight className="w-5 h-5 ml-2" />
             </Button>
           </div>
-        ) : currentStep <= survey.perguntas.length ? (
+        ) : currentStep <= perguntas.length ? (
           // Question Screen
           <div className="space-y-6 py-4">
             <div>
-              {survey.perguntas[currentStep - 1].blockTitle && (
+              {perguntas[currentStep - 1].blockTitle && (
                 <div className="mb-3 rounded-xl border bg-accent/40 p-3">
                   <p className="text-xs uppercase tracking-wider text-muted-foreground">
                     Secao
                   </p>
                   <p className="font-semibold">
-                    {survey.perguntas[currentStep - 1].blockTitle}
+                    {perguntas[currentStep - 1].blockTitle}
                   </p>
                 </div>
               )}
@@ -432,16 +446,16 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
                 <span className="text-sm font-medium text-lema-primary">
                   Pergunta {currentStep}
                 </span>
-                {survey.perguntas[currentStep - 1].required && (
+                {perguntas[currentStep - 1].required && (
                   <span className="text-xs text-red-500">*Obrigatória</span>
                 )}
               </div>
               <h2 className="text-xl font-semibold">
-                {survey.perguntas[currentStep - 1].text}
+                {perguntas[currentStep - 1].text}
               </h2>
             </div>
 
-            {renderQuestion(survey.perguntas[currentStep - 1])}
+            {renderQuestion(perguntas[currentStep - 1])}
           </div>
         ) : (
           // Completion Screen
@@ -491,11 +505,11 @@ export function SurveyForm({ survey, onComplete }: SurveyFormProps) {
               Anterior
             </Button>
             <Button
-              onClick={currentStep === survey.perguntas.length ? () => setCurrentStep(totalSteps) : handleNext}
+              onClick={currentStep === perguntas.length ? () => setCurrentStep(totalSteps) : handleNext}
               disabled={!canProceed()}
               className="flex-1 h-12 bg-lema-primary hover:bg-lema-primary/90"
             >
-              {currentStep === survey.perguntas.length ? 'Finalizar' : 'Próxima'}
+              {currentStep === perguntas.length ? 'Finalizar' : 'Próxima'}
               <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
